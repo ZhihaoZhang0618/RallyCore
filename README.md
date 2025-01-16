@@ -1,9 +1,7 @@
 # PhoenixCore
 
 ## Overview
-PhoenixCore is a ROS2- and Nav2-based software stack designed for F1TENTH autonomous vehicle development. It uses SmacPlannerHybrid as the global planner to compute the global path, and RegulatedPurePursuit to track the path from the vehicle's current position. Additionally, it employs slam_toolbox and robot_localization to localize the vehicle within its environment.
-
-I hope this project becomes an easy-to-use navigation baseline for F1TENTH developers to modify and utilize in races. However, there are still some issues that need addressing. For instance, the computational performance and speed of the global planner are currently inadequate, and RegulatedPurePursuit struggles to follow the global path and avoid obstacles at high speeds.
+GBCore is a ROS2- and Nav2-based software stack designed for GBCore, which is a rally car for autonomous vehicle development at all kinds of complex terrains. 
 
 All the code was written during my free time after work while I was a Research Assistant at [ZJU FAST Lab](https://github.com/ZJU-FAST-Lab). I am deeply grateful to the wonderful people at ZJU FAST Lab for their support and guidance. Even though this is just a small project, their assistance was invaluable.
 ## Installation
@@ -13,17 +11,17 @@ I provide an installation guide [here](install.md), for ROS2 Humble on Ubuntu 22
 May have some issues with the installation guide, please let me know if you have any questions.
 ## Modification & Customization
 #### Some Hardware Details
-NUC12 (Intel i5-1240p)
+NVIDIA Orin
 
-Lidar: 3i-T1 or utm30lx
+Lidar: mid360(main)
 
 Camera: didn't use right now
 
-IMU: fdilink Deta30
+IMU: fdilink Deta10
 
 Remote Controller: RadioMaster Pocket ELRS version (much better than XBOX series controller) 
 
-For more details about the hardware, please contact to the [KelvinLauMiau](https://github.com/KelvinLauMiau)
+For more details about the hardware, please contact to the introduction in FastLab NAS.
 #### VESC Interface
 The modified VESC interface is based on the VESC interface provided by Veddar VESC Interface. The modification includes:
 - Modify the odometry computation, as the original method causes a speed delay when decelerating from high velocities to a stop.
@@ -31,7 +29,7 @@ The modified VESC interface is based on the VESC interface provided by Veddar VE
 #### ackermann_mux
 - Add some scripts to process msg from ELRS driver and publish to /teleop
 
-#### Nav2
+#### Nav2's param
 - refer to the [QUTMS_Driverless](https://github.com/QUT-Motorsport/QUTMS_Driverless) to set up Nav2
 
 ## Main Launch Files
@@ -54,14 +52,14 @@ or
 ros2 launch f1tenth_system nav_avoid.launch.py
 # nav2 with avoidance launch file
 ```
-## Results
+<!-- ## Results
 My friends have been using this code for 19th F1TENTH Grand Prix at SM 2024. And we got the 3rd prize.
 
 <a href="https://www.youtube.com/watch?v=uXfa9ODQRoo">
     <img src="prize.jpg" width="400"/>
 </a>
 
-click picure to view the video
+click picure to view the video -->
 
 
 ## Acknowledgement

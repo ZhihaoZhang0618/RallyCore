@@ -75,7 +75,7 @@ setopt no_nomatch && sudo apt install ros-humble-udp-msgs* ros-humble-ackermann-
 
 git clone --recursive git@github.com:z1047941150/PhoenixCore.git
 
-cd PhoenixCore && colcon build
+cd PhoenixCore && git submodule update --init --recursive && colcon build
 
 sudo cp rules/\*.rules /etc/udev/rules.d
 

@@ -13,3 +13,6 @@
 [submodule "src/ros2_wheeltec_n100_imu"]
 	path = src/ros2_wheeltec_n100_imu
 	url = https://github.com/Livox-SDK/ros2_wheeltec_n100_imu.git
+[submodule "src/FAST_LIO"]
+	path = src/FAST_LIO
+	url = https://github.com/Ericsii/FAST_LIO.git
