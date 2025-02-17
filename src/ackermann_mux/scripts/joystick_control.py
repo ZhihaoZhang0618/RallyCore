@@ -27,7 +27,7 @@ class JoystickControl(Node):
 
         self.speed_limit = self.declare_parameter("speed_limit", 3.0).value
         self.speed_reverse = self.declare_parameter("speed_reverse", False).value
-        self.speed_channel = self.declare_parameter("speed_channel", 2).value
+        self.speed_channel = self.declare_parameter("speed_channel", 3).value # channel x is x, don't worry
         self.steering_channel = self.declare_parameter("steering_channel", 4).value
         self.steering_limit = self.declare_parameter("steering_limit", 0.40).value
         self.steering_reverse = self.declare_parameter("steering_reverse", True).value
@@ -81,7 +81,7 @@ class JoystickControl(Node):
         ]
 
         self.locked = self.channel[5] < 1200
-        self.control_mode = "teleop" if self.channel[6] < 1200 else "nav"
+        self.control_mode = "teleop" if self.channel[7] < 1200 else "nav"
 
         self.last_joystick_time = self.get_clock().now()
         # self.get_logger().info("locked: %s" % self.locked)

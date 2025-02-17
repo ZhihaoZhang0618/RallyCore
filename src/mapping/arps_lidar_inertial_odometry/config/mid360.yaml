@@ -1,0 +1,52 @@
+common:
+  lid_topic: "/livox/lidar"
+  imu_topic: "/livox/imu"
+  filter_size_map: 0.2
+  point_filter_num: 3
+  laser_point_cov: 0.0001
+  max_iteration: 3
+  cube_side_length: 1000.0
+
+preprocess:
+  lidar_type: 2                # Livox series LiDAR
+  feature_extract_en: false
+  scan_line: 6
+  blind: 0.0
+  timestamp_unit: 0
+
+
+initialization:
+  cut_frame_num: 1            # must be positive integer
+  orig_odom_freq: 10           # original Lidar frequency
+  mean_acc_norm: 1.0         # 1 for livox built-in IMU
+  online_refine_time: 20.0     # seconds
+  data_accum_length: 500
+  max_init_count: 100
+
+mapping:
+  filter_size_surf: 0.4
+  filter_size_map: 0.4
+  imu_en: true
+  imu_int_frame: 200
+  gyr_cov: 0.01
+  acc_cov: 0.001
+  b_acc_cov: 0.004
+  b_gyr_cov: 0.0002
+  det_range: 100.0
+  extrinsic_T: [ -0.011, -0.02329, 0.04412 ]
+  #extrinsic_T: [ 0.011, 0.02329, -0.04412 ]
+  extrinsic_R: [ 1., 0., 0.,
+                 0., 1., 0.,
+                 0., 0., 1. ]
+  extrinsic_RPY: [ 0.0, 15.0, 0.0 ]
+
+publish:
+  path_en: true
+  scan_publish_en: true       # false: close all the point cloud output
+  dense_publish_en: true       # false: low down the points number in a global-frame point clouds scan.
+  scan_bodyframe_pub_en: true  # true: output the point cloud scans in IMU-body-frame
+
+pcd_save:
+  pcd_save_en: false
+  interval: -1                 # how many LiDAR frames saved in each pcd file;
+  # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.

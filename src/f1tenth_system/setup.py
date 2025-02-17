@@ -20,6 +20,10 @@ setup(
             glob(os.path.join("params", "*.yaml")),
         ),  # 包含 yaml 文件
         (
+            os.path.join("share", package_name, "params"),
+            glob(os.path.join("params", "*.json")),
+        ),  # 包含 yaml 文件
+        (
             os.path.join("share", package_name, "behaviour_trees"),
             glob(os.path.join("behaviour_trees", "*.xml")),
         ),
