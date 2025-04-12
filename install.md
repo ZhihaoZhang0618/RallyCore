@@ -1,6 +1,6 @@
 sudo apt install net-tools openssh-server
 
-sudo service ssh star
+sudo service ssh start
 
 sudo service ssh status
 
@@ -71,7 +71,7 @@ sudo make install
 
 sudo apt install ros-humble-asio-cmake-module libasio-dev rapidjson-dev gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-gl libfuse2 libxkbcommon-x11-0 libxcb-cursor-dev -y
 
-setopt no_nomatch && sudo apt install ros-humble-udp-msgs* ros-humble-ackermann-* ros-humble-plotjuggler* ros-humble-diagnostic-* ros-humble-robot-localization* ros-humble-rmw-cyclonedds-* ros-humble-slam-toolbox* ros-humble-rqt* ros-humble-nav2* ros-humble-tf* ros-humble-map\*
+setopt no_nomatch && sudo apt install ros-humble-udp-msgs* ros-humble-ackermann-* ros-humble-plotjuggler* ros-humble-diagnostic-* ros-humble-robot-localization* ros-humble-rmw-cyclonedds-* ros-humble-slam-toolbox* ros-humble-rqt* ros-humble-nav2* ros-humble-tf* ros-humble-map* ros-humble-pcl-*
 
 git clone --recursive git@github.com:z1047941150/PhoenixCore.git
 
