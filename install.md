@@ -29,7 +29,8 @@ setopt no_nomatch
 
 source /opt/ros/humble/setup.zsh
 
-source ~/PhoenixCore/install/setup.zsh
+source ~/RallyCore/install/setup.zsh
+source ~/livox_ws/install/setup.zsh
 
 eval "$(register-python-argcomplete3 ros2)"
 
@@ -73,7 +74,11 @@ sudo apt install ros-humble-asio-cmake-module libasio-dev rapidjson-dev gstreame
 
 setopt no_nomatch && sudo apt install ros-humble-udp-msgs* ros-humble-ackermann-* ros-humble-plotjuggler* ros-humble-diagnostic-* ros-humble-robot-localization* ros-humble-rmw-cyclonedds-* ros-humble-slam-toolbox* ros-humble-rqt* ros-humble-nav2* ros-humble-tf* ros-humble-map* ros-humble-pcl-*
 
-git clone --recursive git@github.com:z1047941150/PhoenixCore.git
+#### follow livox driver readme to compile
+https://github.com/Livox-SDK/livox_ros_driver2
+
+#### install main 
+git clone --recursive git@github.com:z1047941150/RallyCore.git
 
 cd PhoenixCore && git submodule update --init --recursive && colcon build
 

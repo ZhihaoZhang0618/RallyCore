@@ -7,6 +7,6 @@
 [submodule "src/ackermann_mux"]
 	path = src/ackermann_mux
 	url = https://github.com/z1047941150/ackermann_mux.git
-[submodule "src/ros2_wheeltec_n100_imu"]
-	path = src/ros2_wheeltec_n100_imu
-	url = https://github.com/Livox-SDK/ros2_wheeltec_n100_imu.git
+[submodule "src/FASTLIO2_ROS2"]
+	path = src/FASTLIO2_ROS2
+	url = https://github.com/liangheming/FASTLIO2_ROS2.git
