@@ -10,6 +10,6 @@
 [submodule "src/ros2_wheeltec_n100_imu"]
 	path = src/ros2_wheeltec_n100_imu
 	url = https://github.com/NDHANA94/ros2_wheeltec_n100_imu.git
-[submodule "src/FASTLIO2_ROS2"]
+[submodule "FASTLIO2_ROS2"]
 	path = src/FASTLIO2_ROS2
 	url = https://github.com/liangheming/FASTLIO2_ROS2.git
