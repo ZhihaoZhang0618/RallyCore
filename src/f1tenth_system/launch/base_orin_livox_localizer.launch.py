@@ -71,7 +71,7 @@ def generate_launch_description():
         executable='crsf_receiver_node',
         name='crsf_receiver_node',
         parameters=[
-            {'device': '/dev/ttyTHS1'},
+            {'device': '/dev/ttyELRS'},
             {'baud_rate': 420000},
             {'link_stats': True}
         ],
@@ -88,7 +88,7 @@ def generate_launch_description():
     )
 
     ################### user configure parameters for ros2 start ###################
-    xfer_format   = 0    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
+    xfer_format   = 1    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
     multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
     data_src      = 0    # 0-lidar, others-Invalid data src
     publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
@@ -165,32 +165,50 @@ def generate_launch_description():
     )
     
     
-    lio_config_path = os.path.join(get_package_share_directory("f1tenth_system"), 'params', 'mid360_lio.yaml')
-
+    lio_config_path = os.path.join(get_package_share_directory("f1tenth_system"), 'params', 'lio.yaml')
+    localizer_config_path = os.path.join(get_package_share_directory("f1tenth_system"), 'params', 'localizer.yaml')
 
     lio=Node(
-    package="arps_lidar_inertial_odometry",
+    package="fastlio2",
+    namespace="fastlio2",
     executable="lio_node",
-    parameters=[{'config_file': lio_config_path}]
+    name="lio_node",
+    output="screen",
+    parameters=[{'config_path': lio_config_path}]
     )
-        
+
+    localizer_node = Node(
+                package="localizer",
+                namespace="localizer",
+                executable="localizer_node",
+                name="localizer_node",
+                output="screen",
+                parameters=[
+                    {
+                        "config_path": localizer_config_path.perform(
+                            launch.LaunchContext()
+                        )
+                    }
+                ],
+            )
+
+    static_tf_node_lb = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='static_lidar_to_baselink',
+        arguments=['-0.13', '0.0', '-0.03', '0.0', '-0.261799', '0.0', 'lidar', 'base_link']
+    )
     static_tf_node_bl = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_baselink_to_laser',
         arguments=['0.13', '0.0', '0.03', '0.0', '0.261799', '0.0', 'base_link', 'laser']
     )
-    static_tf_node_mo = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_map_to_odom',
-        arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 'map', 'odom']
-    )
     static_tf_node_bi = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_baselink_to_imu',
-        arguments=['0.00', '0.0', '0.05', '0.0', '0.0', '0.7071068', '0.7071068', 'base_link', 'imu_link']
+        arguments=['0.00', '0.0', '0.05', '0.0', '0.0', '0.0', 'base_link', 'imu_link']
     )
     base_footprint_to_base_link = Node(package = "tf2_ros", 
                        executable = "static_transform_publisher",
@@ -209,12 +227,12 @@ def generate_launch_description():
     ld.add_action(imu_driver)
     ld.add_action(lidar_driver)
     ld.add_action(robot_localization_node)
+    
     ld.add_action(lio)
+    ld.add_action(localizer_node)
 
-
-
+    ld.add_action(static_tf_node_lb)
     ld.add_action(static_tf_node_bl)
-    # ld.add_action(static_tf_node_mo)
     ld.add_action(static_tf_node_bi)
 
     return ld

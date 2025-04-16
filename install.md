@@ -6,10 +6,12 @@ sudo service ssh status
 
 ifconfig
 
+#### nomachie for x86
 wget https://download.nomachine.com/download/8.13/Linux/nomachine_8.13.1_1_amd64.deb
 
 sudo dpkg -i nomachine_8.13.1_1_amd64.deb
 
+#### zsh
 sudo apt install zsh git curl terminator vim -y
 
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
@@ -37,6 +39,8 @@ eval "$(register-python-argcomplete3 ros2)"
 eval "$(register-python-argcomplete3 colcon)"
 
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+export CYCLONEDDS_URI=~/cyclonedds.xml # optional
 
 alias base='ros2 launch f1tenth_system base.launch.py'
 
@@ -72,7 +76,7 @@ sudo make install
 
 sudo apt install ros-humble-asio-cmake-module libasio-dev rapidjson-dev gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-gl libfuse2 libxkbcommon-x11-0 libxcb-cursor-dev -y
 
-setopt no_nomatch && sudo apt install ros-humble-udp-msgs* ros-humble-ackermann-* ros-humble-plotjuggler* ros-humble-diagnostic-* ros-humble-robot-localization* ros-humble-rmw-cyclonedds-* ros-humble-slam-toolbox* ros-humble-rqt* ros-humble-nav2* ros-humble-tf* ros-humble-map* ros-humble-pcl-*
+setopt no_nomatch && sudo apt install ros-humble-udp-msgs* ros-humble-ackermann-* ros-humble-plotjuggler* ros-humble-diagnostic-* ros-humble-robot-localization* ros-humble-rmw-cyclonedds-* ros-humble-slam-toolbox* ros-humble-rqt* ros-humble-nav2* ros-humble-tf* ros-humble-map* ros-humble-pcl-* -y
 
 #### follow livox driver readme to compile
 https://github.com/Livox-SDK/livox_ros_driver2
@@ -82,8 +86,9 @@ git clone --recursive git@github.com:z1047941150/RallyCore.git
 
 cd PhoenixCore && git submodule update --init --recursive && colcon build
 
-sudo cp rules/\*.rules /etc/udev/rules.d
+sudo cp rules/*.rules /etc/udev/rules.d
 
 sudo apt remove brltty
 
 #### modify wired ip
+192.168.1.5	255.255.255.0	192.168.1.1

@@ -35,6 +35,11 @@ The modified VESC interface is based on the VESC interface provided by Veddar VE
 ## Main Launch Files
 
 ```
+ros2 launch fastlio2 lio_launch.py
+ros2 launch livox_ros_driver2 msg_MID360_launch.py
+
+
+
 ros2 launch f1tenth_system base.launch.py
 #for hardware driver bringup
 
@@ -71,7 +76,7 @@ This project would not be possible without the use of multiple great open-source
 - [ros2_crsf_receiver](https://github.com/AndreyTulyakov/ros2_crsf_receiver.git)
 - [ackermann_mux](https://github.com/z1047941150/ackermann_mux.git)
 - [Veddar VESC Interface](https://github.com/f1tenth/vesc)
-
+- [FASTLIO2_ROS2](https://github.com/liangheming/FASTLIO2_ROS2.git)
 
 ##### map and nav2 config provivded by [KelvinLauMiau](https://github.com/KelvinLauMiau)
 ##### All the code was written at FAST Lab, Zhejiang University.

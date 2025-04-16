@@ -105,6 +105,9 @@ class JoystickControl(Node):
             self.rc_connected = False
             self.get_logger().warn("No joystick input")
             self.publish_none()
+            if (self.get_clock().now() - self.last_joystick_time).nanoseconds / 1e9 > 5.0:
+                self.get_logger().warn("No joystick input for 5 seconds, shutting down...")
+                rclpy.shutdown()
             return
 
         msg = AckermannDriveStamped()
