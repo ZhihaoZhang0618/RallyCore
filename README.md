@@ -1,7 +1,7 @@
-# PhoenixCore
+# RallyCore
 
 ## Overview
-GBCore is a ROS2- and Nav2-based software stack designed for GBCore, which is a rally car for autonomous vehicle development at all kinds of complex terrains. 
+RallyCore is a ROS2- and Nav2-based software stack designed for rally car, which is a rally car for autonomous vehicle development at all kinds of complex terrains. 
 
 All the code was written during my free time after work while I was a Research Assistant at [ZJU FAST Lab](https://github.com/ZJU-FAST-Lab). I am deeply grateful to the wonderful people at ZJU FAST Lab for their support and guidance. Even though this is just a small project, their assistance was invaluable.
 ## Installation
@@ -11,13 +11,13 @@ I provide an installation guide [here](install.md), for ROS2 Humble on Ubuntu 22
 May have some issues with the installation guide, please let me know if you have any questions.
 ## Modification & Customization
 #### Some Hardware Details
-NVIDIA Orin
+NVIDIA Orin or NUC(recommended)
 
 Lidar: mid360(main)
 
 Camera: didn't use right now
 
-IMU: fdilink Deta10
+IMU: fdilink Deta10(only for yaw estimation)
 
 Remote Controller: RadioMaster Pocket ELRS version (much better than XBOX series controller) 
 
@@ -57,39 +57,30 @@ or
 ros2 launch f1tenth_system nav_avoid.launch.py
 # nav2 with avoidance launch file
 ```
-<!-- ## Results
-My friends have been using this code for 19th F1TENTH Grand Prix at SM 2024. And we got the 3rd prize.
-
-<a href="https://www.youtube.com/watch?v=uXfa9ODQRoo">
-    <img src="prize.jpg" width="400"/>
-</a>
-
-click picure to view the video -->
 
 
 ## Acknowledgement
 This project would not be possible without the use of multiple great open-sourced code bases as listed below:
 - [ForzaETH Race Stack](https://github.com/ForzaETH/race_stack)
 - [QUTMS_Driverless](https://github.com/QUT-Motorsport/QUTMS_Driverless)
-- [slam_toolbox](https://github.com/SteveMacenski/slam_toolbox)
 - [f1tenth_system](https://github.com/f1tenth/f1tenth_system)
 - [ros2_crsf_receiver](https://github.com/AndreyTulyakov/ros2_crsf_receiver.git)
 - [ackermann_mux](https://github.com/z1047941150/ackermann_mux.git)
 - [Veddar VESC Interface](https://github.com/f1tenth/vesc)
 - [FASTLIO2_ROS2](https://github.com/liangheming/FASTLIO2_ROS2.git)
 
-##### map and nav2 config provivded by [KelvinLauMiau](https://github.com/KelvinLauMiau)
 ##### All the code was written at FAST Lab, Zhejiang University.
 
 
 
 
 ## Future Work
-- compare slam_toolbox with cartographer.
-- Use [global_racetrajectory_optimization](https://github.com/TUMFTM/global_racetrajectory_optimization) to optimize a fixed global path.
-- Use MPCC to track the path.
+- Add terrain traversability or elevation estimation module
+- Add flexible path planning module
+- Add current&acceleration calibration and control module
 - Use a better simulation environment, like ISAAC Lab, Autodrive.
-- Use RL to learn Emergency Brake Assist and Auto Overtake policies.
+- Use RL to learn end-to-end policies.
+
 
 
 
