@@ -15,13 +15,14 @@ NVIDIA Orin or NUC(recommended)
 
 Lidar: mid360(main)
 
-Camera: didn't use right now
+Camera: didn't add right now
 
-IMU: fdilink Deta10(only for yaw estimation)
+IMU: fdilink Deta10 (option,only for yaw estimation right now)
 
 Remote Controller: RadioMaster Pocket ELRS version (much better than XBOX series controller) 
 
-For more details about the hardware, please contact to the introduction in FastLab NAS.
+For more details about the hardware, coming soon.
+
 #### VESC Interface
 The modified VESC interface is based on the VESC interface provided by Veddar VESC Interface. The modification includes:
 - Modify the odometry computation, as the original method causes a speed delay when decelerating from high velocities to a stop.
