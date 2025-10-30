@@ -1,8 +1,9 @@
 imu_topic: /livox/imu
 lidar_topic: /livox/lidar
-body_frame: lidar
+body_frame: base_link
 world_frame: odom
 print_time_cost: false
+publish_tf: false  # 控制是否发布tf树，true为发布，false为不发布
 
 lidar_filter_num: 6
 lidar_min_range: 0.5

@@ -154,6 +154,7 @@ def generate_launch_description():
         package='vesc_driver',
         executable='vesc_driver_node',
         name='vesc_driver_node',
+                output='screen',
         parameters=[LaunchConfiguration('vesc_config')]
     )
     robot_localization_node = Node(
@@ -185,12 +186,7 @@ def generate_launch_description():
         parameters=[{'config_path': pgo_config_path}]
     )
 
-    static_tf_node_lb = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_lidar_to_baselink',
-        arguments=['-0.13', '0.0', '-0.03', '0.0', '-0.261799', '0.0', 'lidar', 'base_link']
-    )
+
     static_tf_node_bl = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -230,7 +226,6 @@ def generate_launch_description():
 
 
 
-    ld.add_action(static_tf_node_lb)
     ld.add_action(static_tf_node_bl)
     ld.add_action(static_tf_node_bi)
 

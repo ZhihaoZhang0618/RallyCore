@@ -40,6 +40,7 @@ def generate_launch_description():
         "planner_server",
         "behavior_server",
         "bt_navigator",
+        "map_server",
     ]
 
     # Map fully qualified names to relative ones so the node's namespace can be prepended.
@@ -151,6 +152,14 @@ def generate_launch_description():
                 remappings=remappings,
             ),
             Node(
+            package='nav2_map_server',
+            executable='map_server',
+            name='map_server',
+            output='screen',
+            parameters=[configured_params,
+                        {'yaml_filename':'/home/nuc/maps/20250417_174751/map.yaml'}],
+            remappings=remappings),
+            Node(
                 package="nav2_lifecycle_manager",
                 executable="lifecycle_manager",
                 name="lifecycle_manager_navigation",
@@ -180,6 +189,7 @@ def generate_launch_description():
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_autostart_cmd)
     ld.add_action(declare_log_level_cmd)
+
     # Add the actions to launch all of the navigation nodes
     ld.add_action(load_nodes)
 

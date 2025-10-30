@@ -29,6 +29,11 @@ class JoystickControl(Node):
         self.speed_reverse = self.declare_parameter("speed_reverse", False).value
         self.speed_channel = self.declare_parameter("speed_channel", 3).value # channel x is x, don't worry
         self.steering_channel = self.declare_parameter("steering_channel", 4).value
+        self.speed_channel8_enabled = self.declare_parameter("speed_channel8_enabled", True).value
+        self.speed_channel8_min_value = self.declare_parameter("speed_channel8_min_value", 191).value
+        self.speed_channel8_max_value = self.declare_parameter("speed_channel8_max_value", 1792).value
+        self.speed_channel8_min_speed = self.declare_parameter("speed_channel8_min_speed", 2.0).value
+        self.speed_channel8_max_speed = self.declare_parameter("speed_channel8_max_speed", 12.0).value
         self.steering_limit = self.declare_parameter("steering_limit", 0.40).value
         self.steering_reverse = self.declare_parameter("steering_reverse", True).value
         self.channel_mid = self.declare_parameter(
@@ -50,6 +55,9 @@ class JoystickControl(Node):
         self.get_logger().info("speed_reverse: %s" % self.speed_reverse)
         self.get_logger().info("speed_channel: %d" % self.speed_channel)
         self.get_logger().info("steering_channel: %d" % self.steering_channel)
+        self.get_logger().info("speed_channel8_enabled: %s" % self.speed_channel8_enabled)
+        self.get_logger().info("speed_channel8_min_value: %d, max_value: %d" % (self.speed_channel8_min_value, self.speed_channel8_max_value))
+        self.get_logger().info("speed_channel8_min_speed: %f, max_speed: %f" % (self.speed_channel8_min_speed, self.speed_channel8_max_speed))
         self.get_logger().info("steering_limit: %f" % self.steering_limit)
         self.get_logger().info("steering_reverse: %s" % self.steering_reverse)
         self.get_logger().info("steering_channel_mid: %d" % self.channel_mid)
@@ -116,13 +124,33 @@ class JoystickControl(Node):
         if self.control_mode == "teleop" and self.rc_connected:
             # 速度和转角控制
             raw_speed = self.channel[self.speed_channel]
+            
+            # 获取当前速度限制
+            current_speed_limit = self.speed_limit
+            
+            # 如果启用了通道8速度限制，则根据通道8的值调整速度限制
+            if self.speed_channel8_enabled:
+                channel8_value = self.channel[8]
+                # 确保值在有效范围内
+                channel8_value = max(self.speed_channel8_min_value, min(channel8_value, self.speed_channel8_max_value))
+                # 计算速度比例 (0-1)
+                speed_ratio = (channel8_value - self.speed_channel8_min_value) / (
+                    self.speed_channel8_max_value - self.speed_channel8_min_value
+                )
+                # 计算当前速度限制 (2-8 m/s)
+                current_speed_limit = self.speed_channel8_min_speed + speed_ratio * (
+                    self.speed_channel8_max_speed - self.speed_channel8_min_speed
+                )
+                self.get_logger().debug("Channel8 value: %d, Speed limit: %.2f m/s" % (channel8_value, current_speed_limit))
+            
+            # 使用原始速度控制逻辑，但使用当前速度限制
             # speed deadzone
             if abs(raw_speed - self.channel_mid) > self.channel_deadzone:
                 # Normalize speed value to -1 to 1
                 normalized_speed = (raw_speed - self.channel_mid) / (
                     self.channel_max_range - self.channel_mid
                 )
-                msg.drive.speed = normalized_speed * self.speed_limit
+                msg.drive.speed = normalized_speed * current_speed_limit
                 if self.speed_reverse:
                     msg.drive.speed = -msg.drive.speed
             else:

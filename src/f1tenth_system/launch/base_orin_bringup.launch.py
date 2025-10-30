@@ -38,7 +38,6 @@ def generate_launch_description():
         'vesc.yaml'
     )
 
-
     vesc_la = DeclareLaunchArgument(
         'vesc_config',
         default_value=vesc_config,
@@ -49,29 +48,45 @@ def generate_launch_description():
         'params',
         'mux.yaml'
     )
-    # ekf_config = os.path.join(
-    #     get_package_share_directory('f1tenth_system'),
-    #     'params',
-    #     'ekf.yaml'
-    # )
+
     mux_la = DeclareLaunchArgument(
         'mux_config',
         default_value=mux_config,
         description='Descriptions for ackermann mux configs')
 
-    # ekf_la = DeclareLaunchArgument(
-    #     'ekf_config',
-    #     default_value=ekf_config,
-    #     description='Descriptions for ackermann mux configs')
-    ld = LaunchDescription([vesc_la,mux_la])
+    # Declare config paths for LIO and Localizer
+    lio_config = os.path.join(
+        get_package_share_directory('f1tenth_system'),
+        'params',
+        'lio.yaml'
+    )
+    
+    localizer_config = os.path.join(
+        get_package_share_directory('f1tenth_system'),
+        'params',
+        'localizer.yaml'
+    )
 
+    lio_la = DeclareLaunchArgument(
+        'lio_config',
+        default_value=lio_config,
+        description='Configuration for LIO node'
+    )
+
+    localizer_la = DeclareLaunchArgument(
+        'localizer_config',
+        default_value=localizer_config,
+        description='Configuration for Localizer node'
+    )
+
+    ld = LaunchDescription([vesc_la, mux_la, lio_la, localizer_la])
 
     crsf_receiver_node = Node(
         package='crsf_receiver',
         executable='crsf_receiver_node',
         name='crsf_receiver_node',
         parameters=[
-            {'device': '/dev/ttyTHS1'},
+            {'device': '/dev/ttyELRS'},
             {'baud_rate': 420000},
             {'link_stats': True}
         ],
@@ -87,25 +102,41 @@ def generate_launch_description():
     output="screen"
     )
 
+    ################### user configure parameters for ros2 start ###################
+    xfer_format   = 1    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
+    multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
+    data_src      = 0    # 0-lidar, others-Invalid data src
+    publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
+    output_type   = 0
+    frame_id      = 'laser'
+    lvx_file_path = '/home/livox/livox_test.lvx'
+    cmdline_bd_code = 'livox0000000001'
+
+    # cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
+    # cur_config_path = cur_path + '../config'
+    # user_config_path = os.path.join(cur_config_path, 'MID360_config.json')
+    user_config_path = os.path.join(get_package_share_directory("f1tenth_system"), 'params', 'MID360_config.json')
+    ################### user configure parameters for ros2 end #####################
+
+    livox_ros2_params = [
+        {"xfer_format": xfer_format},
+        {"multi_topic": multi_topic},
+        {"data_src": data_src},
+        {"publish_freq": publish_freq},
+        {"output_data_type": output_type},
+        {"frame_id": frame_id},
+        {"lvx_file_path": lvx_file_path},
+        {"user_config_path": user_config_path},
+        {"cmdline_input_bd_code": cmdline_bd_code}
+    ]
+
     lidar_driver = Node(
-      package="ltme_node", executable="ltme_node",
-      output="screen",
-      parameters=[
-        { "device_model": "LTME-02A" },
-        { "device_address": "192.168.10.160" },
-        { "frame_id": "laser" },
-        # { "invert_frame": False },
-        # { "angle_min": -1.571 },
-        # { "angle_max": 1.571 },
-        # { "angle_excluded_min": -0.785 },
-        # { "angle_excluded_max": 0.785 },
-        { "range_min": 0.3 },
-        # { "range_max": 30 },
-        # { "average_factor": 2 },
-        # { "shadow_filter_strength": 15 },
-        { "scan_frequency_override": 30 }
-      ]
-    )
+            package='livox_ros_driver2',
+            executable='livox_ros_driver2_node',
+            name='livox_lidar_publisher',
+            output='screen',
+            parameters=livox_ros2_params
+            )
     
     joystick_control_node = Node(
         package='ackermann_mux',
@@ -147,23 +178,36 @@ def generate_launch_description():
         output='screen',
         parameters=[os.path.join(get_package_share_directory("f1tenth_system"), 'params', 'ekf.yaml')],
     )
+    
+    lio = Node(
+        package="fastlio2",
+        namespace="fastlio2",
+        executable="lio_node",
+        name="lio_node",
+        output="screen",
+        parameters=[{'config_path': LaunchConfiguration('lio_config')}]
+    )
+
+    localizer_node = Node(
+        package="localizer",
+        namespace="localizer",
+        executable="localizer_node",
+        name="localizer_node",
+        output="screen",
+        parameters=[{'config_path': LaunchConfiguration('localizer_config')}]
+    )
+
     static_tf_node_bl = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_baselink_to_laser',
-        arguments=['0.13', '0.0', '0.02', '0.0', '0.0', '0.0', 'base_link', 'laser']
+        arguments=['0.13', '0.0', '0.03', '0.0', '0.261799', '0.0', 'base_link', 'laser']
     )
-    # static_tf_node_mo = Node(
-    #     package='tf2_ros',
-    #     executable='static_transform_publisher',
-    #     name='static_map_to_odom',
-    #     arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 'map', 'odom']
-    # )
     static_tf_node_bi = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_baselink_to_imu',
-        arguments=['0.00', '0.0', '0.05', '0.0', '0.0', '0.7071068', '0.7071068', 'base_link', 'imu_link']
+        arguments=['0.00', '0.0', '0.05', '0.0', '0.0', '0.0', 'base_link', 'imu_link']
     )
     base_footprint_to_base_link = Node(package = "tf2_ros", 
                        executable = "static_transform_publisher",
@@ -180,12 +224,12 @@ def generate_launch_description():
     ld.add_action(joystick_control_node)
     ld.add_action(ackermann_mux_node)
     ld.add_action(imu_driver)
-    ld.add_action(lidar_driver)
+    #ld.add_action(lidar_driver)
     ld.add_action(robot_localization_node)
-
+    
+    
 
     ld.add_action(static_tf_node_bl)
-    # ld.add_action(static_tf_node_mo)
     ld.add_action(static_tf_node_bi)
 
     return ld
