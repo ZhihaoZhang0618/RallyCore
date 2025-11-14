@@ -57,7 +57,7 @@ AckermannToVesc::AckermannToVesc(const rclcpp::NodeOptions & options)
     declare_parameter<double>("steering_angle_to_servo_offset");
   
   // Motor startup parameters
-  startup_duty_cycle_ = declare_parameter<double>("startup_duty_cycle", 0.1);
+  startup_duty_current_ = declare_parameter<double>("startup_duty_current", 40.0);
   startup_timeout_ms_ = declare_parameter<double>("startup_timeout_ms", 100.0);
 
   // create publishers to vesc electric-RPM (speed) and servo commands
@@ -126,15 +126,11 @@ void AckermannToVesc::ackermannCmdCallback(const AckermannDriveStamped::SharedPt
       
       // State machine for motor startup
       if (!motor_is_running_) {
-        // Send startup duty cycle command
-        // Float64 duty_msg;
-        // duty_msg.data = (last_current_command_ > 0.0) ? startup_duty_cycle_ : -startup_duty_cycle_;
-        // duty_pub_->publish(duty_msg);
-        // RCLCPP_INFO(get_logger(), "Motor startup: sending duty cycle %.2f", duty_msg.data);
+
         Float64 current_msg;
-        current_msg.data = (last_current_command_ > 0.0) ? 50 : -50;
+        current_msg.data = (last_current_command_ > 0.0) ? startup_duty_current_ : -startup_duty_current_;
         current_pub_->publish(current_msg);
-        RCLCPP_INFO(get_logger(), "Motor startup: sending duty cycle %.2f", current_msg.data);
+        RCLCPP_INFO(get_logger(), "Motor startup: sending current cycle %.2f", current_msg.data);
       } 
       else if (motor_is_running_) {
         // Send current command

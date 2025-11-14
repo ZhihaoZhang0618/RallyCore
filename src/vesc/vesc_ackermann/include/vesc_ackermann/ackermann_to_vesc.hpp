@@ -54,7 +54,7 @@ private:
   // conversion gain and offset
   double speed_to_erpm_gain_, speed_to_erpm_offset_;
   double steering_to_servo_gain_, steering_to_servo_offset_;
-  double startup_duty_cycle_;  // Duty cycle for motor startup (0.1)
+  double startup_duty_current_;  // Current for motor startup (0.1)
   double startup_timeout_ms_;  // Time window for startup confirmation (50ms default)
 
   /** @todo consider also providing an interpolated look-up table conversion */
