@@ -34,12 +34,15 @@
 #include <ackermann_msgs/msg/ackermann_drive_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float64.hpp>
+#include <vesc_msgs/msg/vesc_state_stamped.hpp>
+#include <chrono>
 
 namespace vesc_ackermann
 {
 
 using ackermann_msgs::msg::AckermannDriveStamped;
 using std_msgs::msg::Float64;
+using vesc_msgs::msg::VescStateStamped;
 
 class AckermannToVesc : public rclcpp::Node
 {
@@ -51,16 +54,33 @@ private:
   // conversion gain and offset
   double speed_to_erpm_gain_, speed_to_erpm_offset_;
   double steering_to_servo_gain_, steering_to_servo_offset_;
+  double startup_duty_cycle_;  // Duty cycle for motor startup (0.1)
+  double startup_timeout_ms_;  // Time window for startup confirmation (50ms default)
 
   /** @todo consider also providing an interpolated look-up table conversion */
 
   // ROS services
+  // Publishers for speed mode
   rclcpp::Publisher<Float64>::SharedPtr erpm_pub_;
   rclcpp::Publisher<Float64>::SharedPtr servo_pub_;
+  // Publishers for current mode
+  rclcpp::Publisher<Float64>::SharedPtr current_pub_;
+  // Publishers for duty mode
+  rclcpp::Publisher<Float64>::SharedPtr duty_pub_;
+  
   rclcpp::Subscription<AckermannDriveStamped>::SharedPtr ackermann_sub_;
+  rclcpp::Subscription<VescStateStamped>::SharedPtr vesc_state_sub_;
+
+  rclcpp::Time last_nonzero_speed_time_;  // When we last detected nonzero speed
+  double last_current_command_;  // Store last current command during startup
+  double last_steering_command_;  // Store last steering command during startup
+  double last_motor_speed_;  // Current motor speed from sensors
+  bool motor_has_detected_motion_;  // Flag to track if motion has been detected during startup
+  bool motor_is_running_;
 
   // ROS callbacks
   void ackermannCmdCallback(const AckermannDriveStamped::SharedPtr cmd);
+  void vescStateCallback(const VescStateStamped::SharedPtr state);
 };
 
 }  // namespace vesc_ackermann
