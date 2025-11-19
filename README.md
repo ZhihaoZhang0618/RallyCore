@@ -14,7 +14,6 @@ I provide an installation guide [here](install.md) 📖, for ROS2 Humble on Ubun
 ## 🔨 Modification & Customization
 
 ### 🛠️ Hardware Details
-### 🛠️ Hardware Details
 **💻 Computing Platform:** NVIDIA Orin or NUC (recommended)
 
 **🔦 Lidar:** mid360 (main sensor)

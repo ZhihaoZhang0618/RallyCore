@@ -19,40 +19,38 @@
 
 ```
 ┌─────────────────────────────────────────┐
-│  ROS2 Nodes & Publishers                │
+│  📡 ROS2 Nodes & Publishers            │
 ├─────────────────────────────────────────┤
-│  CurrentAccelCalibNode                  │
-│  ├─ 主状态机                            │
-│  ├─ 轨迹跟踪 (Pure Pursuit)            │
-│  └─ 电流控制 & 数据收集                 │
+│  🎯 CurrentAccelCalibNode              │
+│  ├─ ⚙️ 状态机 & 控制循环                  │
+│  ├─ 📍 Figure8Trajectory                │
+│  ├─ 🎯 PurePursuitController           │
+│  ├─ ⚡ CalibrationTier (3-tier)         │
+│  └─ 🛑 BrakingCalibrationMode         │
 ├─────────────────────────────────────────┤
-│  Physics Models (新增)                   │
-│  ├─ MotorModel                          │
-│  ├─ CalibrationTier                     │
-│  ├─ BrakingCalibrationMode              │
-│  └─ TelemetryRecorder                   │
-├─────────────────────────────────────────┤
-│  ROS2 Topics                             │
-│  ├─ /odom (EKF)                        │
-│  ├─ /vesc/sensors (ERPM)                │
-│  └─ /calib/ackermann_cmd                │
+│  📡 ROS2 Topics                         │
+│  ├─ /odom (Odometry)                  │
+│  ├─ /vesc/sensors (VescState)         │
+│  └─ /calib/ackermann_cmd              │
 └─────────────────────────────────────────┘
 ```
 
 ### 数据流
 
 ```
-EKF Odometry ──┐
-               ├──→ PurePursuitController ──→ 目标电流 ──┐
-VESC Sensors ──┘                                        │
-                                                         ├──→ 发布 /calib/ackermann_cmd
-状态机 ──→ CalibrationTier ──→ 目标速度 & 电流范围 ──┤
-                                                         │
-MotorModel ──→ 物理计算 (加速度, 拖曳力) ──────────────┤
-                                                         │
-TelemetryRecorder ←─── 记录所有参数 ←───────────────────┘
-                            ↓
-                      calibration_data.csv
+📡 EKF Odometry (/odom) ──┐
+                          ├──→ 📍 轨迹最近点查找
+⚡ VESC Sensors         │     ↓
+   (/vesc/sensors)       └─→ 🎯 Pure Pursuit ──→ 🎮 转向角
+                                         │
+⏱️ 时间状态 ──→ ⚙️ CalibrationTier ──→ ⚡ 目标电流
+                         │              │
+                         └──────────────┘
+                                ↓
+                   📤 /calib/ackermann_cmd
+                      (steering + current)
+                                ↓
+                   🚗 VESC Motor Controller
 ```
 
 ---
@@ -129,60 +127,7 @@ Step 4: 验证并集成
 
 ## 代码详解
 
-### 1. MotorModel 类
-
-```python
-class MotorModel:
-    """
-    简化版电机模型：只做单位转换和加速度计算
-    
-    不包含拖曳力假设，保持最小化设计。
-    """
-    
-    ERPM_TO_MS = 1.0 / 4650
-    
-    def __init__(self, vehicle_mass=6.0):
-        self.vehicle_mass = vehicle_mass
-    
-    def erpm_to_speed(self, erpm):
-        """ERPM → 线性速度 (m/s)"""
-        return erpm * self.ERPM_TO_MS
-    
-    def compute_drag_force(self, v, mode='acceleration'):
-        """
-        Placeholder - returns 0 for now.
-        
-        After calibration data analysis, this will be updated
-        with empirically-derived drag model if needed.
-        """
-        return 0.0
-    
-    def compute_acceleration(self, current_A, velocity_ms, mode='acceleration'):
-        """
-        Simple linear model: a = K * I / m
-        
-        K = 2.0 N/A (motor constant, refined by data)
-        
-        No drag force assumption here.
-        
-        Returns:
-            a (float): 加速度 (m/s²)
-        """
-        K_motor = 2.0  # N/A
-        F_motor = K_motor * current_A
-        a = F_motor / self.vehicle_mass
-        return a
-```
-
-**简化特点**:
-- 无拖曳力假设
-- K=2.0 N/A 作为启动值
-- 参数由实测数据确定
-- 保持代码简洁可读
-
----
-
-### 2. CalibrationTier 类
+### 1. CalibrationTier 类
 
 ```python
 class CalibrationTier:
@@ -244,7 +189,7 @@ class CalibrationTier:
 
 ---
 
-### 3. BrakingCalibrationMode 类
+### 2. BrakingCalibrationMode 类
 
 ```python
 class BrakingCalibrationMode:
@@ -280,62 +225,51 @@ class BrakingCalibrationMode:
 
 ---
 
-### 4. TelemetryRecorder 类
+### 3. Figure8Trajectory 类
 
 ```python
-class TelemetryRecorder:
+class Figure8Trajectory:
     """
-    遥测数据记录器
+    8字形轨迹生成器
     
-    记录8个参数到CSV文件
+    生成由两个圆形组成的8字路径，用于标定测试
     """
     
-    def __init__(self, output_path='calibration_data.csv'):
-        self.output_path = output_path
-        self.data = {
-            'timestamp': [],
-            'current_A': [],
-            'velocity_ms': [],
-            'erpm': [],
-            'steering_angle': [],
-            'drag_force_N': [],
-            'estimated_acceleration': [],
-            'mode': []
-        }
+    def __init__(self, R: float = 1.6, center_distance: float = 3.2, 
+                 points_per_circle: int = 200):
+        """
+        参数:
+            R: 每个圆弧半径 (m)，默认1.6 (从https://1.4增加)
+            center_distance: 两个圆心距离 (m)
+            points_per_circle: 每个圆的点数
+        """
+        self.R = R
+        self.trajectory = self._generate_trajectory()
     
-    def record(self, timestamp, current_A, velocity_ms, erpm, steering_angle, 
-               drag_force_N, estimated_acceleration, mode):
-        """记录单条数据行"""
-        self.data['timestamp'].append(timestamp)
-        self.data['current_A'].append(current_A)
-        self.data['velocity_ms'].append(velocity_ms)
-        self.data['erpm'].append(erpm)
-        self.data['steering_angle'].append(steering_angle)
-        self.data['drag_force_N'].append(drag_force_N)
-        self.data['estimated_acceleration'].append(estimated_acceleration)
-        self.data['mode'].append(mode)
+    def _generate_trajectory(self) -> np.ndarray:
+        """生成8字轨迹点"""
+        # 右圆: 中心 (R, 0)
+        # 左圆: 中心 (-R, 0)
+        theta = np.linspace(0, 2*np.pi, self.points_per_circle)
+        right_circle_x = self.R + self.R * np.cos(theta)
+        right_circle_y = self.R * np.sin(theta)
+        left_circle_x = -self.R + self.R * np.cos(theta)
+        left_circle_y = self.R * np.sin(theta)
+        
+        return np.vstack([
+            np.column_stack([right_circle_x, right_circle_y]),
+            np.column_stack([left_circle_x, left_circle_y])
+        ])
     
-    def save_to_csv(self):
-        """导出所有数据到CSV"""
-        import pandas as pd
-        df = pd.DataFrame(self.data)
-        df.to_csv(self.output_path, index=False)
-        print(f"[TelemetryRecorder] 已保存 {len(df)} 行数据到 {self.output_path}")
+    def get_closest_point(self, current_pos: np.ndarray, start_idx: int = 0):
+        """查找轨迹上最近的点"""
+        # ... 省略实现细节
+        pass
 ```
-
-**8列数据**:
-1. timestamp - 相对时间 (秒)
-2. current_A - 命令电流 (安培)
-3. velocity_ms - 实测速度 (m/s)
-4. erpm - 电机速度 (转/分钟)
-5. steering_angle - 转向角 (弧度)
-6. drag_force_N - 估算拖曳力 (牛顿)
-7. estimated_acceleration - 预期加速度 (m/s²)
-8. mode - 控制模式字符串
 
 ---
 
-### 5. PurePursuitController 增强
+### 4. PurePursuitController 类
 
 ```python
 class PurePursuitController:
@@ -369,7 +303,7 @@ class PurePursuitController:
 
 ---
 
-### 6. 主回调函数 - control_loop_callback
+### 5. 主回调函数 - control_loop_callback
 
 ```python
 def control_loop_callback(self):
