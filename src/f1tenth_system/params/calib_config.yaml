@@ -1,0 +1,48 @@
+# Current-Acceleration Calibration Parameters
+# Used by: current_acc_calib.py
+
+# Vehicle Parameters
+wheelbase: 0.33  # Distance from front to rear axle (meters)
+max_steering_angle: 0.30  # Maximum steering angle (radians, ≈ 17°)
+
+# Pure Pursuit Controller Parameters
+lookahead_gain: 1.5  # Lookahead distance gain: ld = k * v + ld_min
+lookahead_distance_min: 0.3  # Minimum lookahead distance (meters)
+
+# Figure-8 Trajectory Parameters
+figure8_radius: 1.4  # Radius of each circular arc (meters)
+figure8_center_distance: 2.8  # Distance between circle centers (meters)
+trajectory_points_per_circle: 200  # Resolution of trajectory discretization
+
+# Control Loop
+command_frequency: 50  # Publication frequency (Hz)
+odom_topic: "/odom"  # Odometry input topic (EKF-filtered)
+cmd_topic: "/calib/ackermann_cmd"  # Command output topic
+
+# Calibration Stages
+# Format: stage_name: {start_time: s, end_time: s, current: A}
+calibration_stages:
+  stage_1:
+    start_time: 0
+    end_time: 30
+    current: 5.0
+  stage_2:
+    start_time: 30
+    end_time: 60
+    current: 10.0
+  stage_3:
+    start_time: 60
+    end_time: 90
+    current: 15.0
+  stage_4:
+    start_time: 90
+    end_time: 120
+    current: 20.0
+
+# Expected Vehicle Parameters (for reference)
+# R = L / tan(δ) = 0.33 / tan(0.3) ≈ 1.1 m (minimum turning radius)
+expected_min_turning_radius: 1.1  # meters
+
+# Logging
+log_frequency: 5  # Status log interval (seconds)
+verbose: true  # Enable detailed logging

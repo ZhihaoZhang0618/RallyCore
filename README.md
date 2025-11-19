@@ -35,29 +35,69 @@ The modified VESC interface is based on the VESC interface provided by Veddar VE
 
 ## Main Launch Files
 
-```
-ros2 launch fastlio2 lio_launch.py
-ros2 launch livox_ros_driver2 msg_MID360_launch.py
+### 🚀 Quick Start (Recommended)
+```bash
+# Hardware bringup (V2 - integrated control)
+ros2 launch f1tenth_system base_orin_livox_bringup_v2.launch.py
 
-
-
-ros2 launch f1tenth_system base.launch.py
-#for hardware driver bringup
-
+# SLAM/Localization
 ros2 launch f1tenth_system slam.launch.py
-#for slam 
 
-ros2 launch f1tenth_system localization_slam.launch.py
-#for localization
-
+# Navigation
 ros2 launch f1tenth_system nav.launch.py
-# nav2 wo avoidance launch file
-
-or
-
-ros2 launch f1tenth_system nav_avoid.launch.py
-# nav2 with avoidance launch file
 ```
+
+### Hardware Bringup Versions
+| Version | Launch File | Features |
+|---------|-------------|----------|
+| **V2 (Recommended)** | `base_orin_livox_bringup_v2.launch.py` | Integrated control (joystick_v2), speed/current/duty modes, simplified architecture |
+| V1 (Legacy) | `base_orin_livox_bringup.launch.py` | Separate mux node, traditional architecture |
+
+**V2 Advantages:** Single control node, built-in arbitration, current control support, easier debugging
+
+📚 **Architecture details:** See `src/f1tenth_system/scripts/readme/` for V1 vs V2 comparison
+
+## 🔧 Calibration & Tuning
+
+### Current-Acceleration Calibration
+Motor current to acceleration mapping for precise speed control.
+
+```bash
+ros2 launch f1tenth_system base_orin_livox_bringup_v2.launch.py
+ros2 launch f1tenth_system slam.launch.py
+ros2 run f1tenth_system current_acc_calib.py
+```
+
+📚 **Docs:** [QUICK_START_CALIB.md](QUICK_START_CALIB.md) | [CALIBRATION_WORKFLOW.md](CALIBRATION_WORKFLOW.md)
+
+### Pure Pursuit Parameter Tuning
+Optimize trajectory tracking before calibration. Default 1 m/s, real-time adjustable.
+
+```bash
+ros2 run f1tenth_system pp_param_tuner
+ros2 run rqt_reconfigure rqt_reconfigure  # GUI tuning
+```
+
+**Key features:** Manual speed control (0-10 m/s) • Figure-8 auto-trajectory • Live metrics (CTE/heading RMS)
+
+**Quick adjust:** `ros2 param set /pp_param_tuner target_speed 2.5`
+
+📚 **Docs:** `src/f1tenth_system/scripts/readme/`
+
+## 🏗️ Architecture: V1 vs V2
+
+**V2 (Integrated):** RC/Nav2/PP/Calib → `joystick_v2` → VESC  
+**V1 (Mux-based):** RC/Nav2 → `joystick` → `ackermann_mux` → VESC
+
+| Feature | V2 | V1 |
+|---------|----|----|
+| Control nodes | 1 (joystick_v2) | 2 (joystick + mux) |
+| ESC modes | Speed/Current/Duty | Speed only |
+| Calibration | Built-in | ❌ |
+| Debugging | Easier | Complex |
+
+📚 **Full comparison:** `src/f1tenth_system/scripts/readme/`
+
 
 
 ## Acknowledgement
