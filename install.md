@@ -84,7 +84,7 @@ https://github.com/Livox-SDK/livox_ros_driver2
 #### install main 
 git clone --recursive git@github.com:z1047941150/RallyCore.git
 
-cd PhoenixCore && git submodule update --init --recursive && colcon build
+cd RallyCore && git submodule update --init --recursive && colcon build
 
 sudo cp rules/*.rules /etc/udev/rules.d
 

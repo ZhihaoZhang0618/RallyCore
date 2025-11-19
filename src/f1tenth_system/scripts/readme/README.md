@@ -29,6 +29,10 @@
 - 输出：`/drive` topic（兼容 V2 bringup 和 Nav2）
 - 快速使用：
   ```bash
+  # ⚠️ 首次使用需要先编译
+  colcon build --packages-select f1tenth_system
+  source install/setup.bash
+  
   # 🆕 使用 V2 bringup（推荐）
   ros2 launch f1tenth_system base_orin_livox_bringup_v2.launch.py
   

@@ -27,6 +27,10 @@ setup(
             os.path.join("share", package_name, "behaviour_trees"),
             glob(os.path.join("behaviour_trees", "*.xml")),
         ),
+        (
+            os.path.join("lib", package_name),
+            glob(os.path.join("scripts", "*.py")),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -38,8 +42,6 @@ setup(
         "test": ["pytest"],
     },
     entry_points={
-        "console_scripts": [
-            # Add console scripts here if needed
-        ],
+        "console_scripts": [],
     },
 )
