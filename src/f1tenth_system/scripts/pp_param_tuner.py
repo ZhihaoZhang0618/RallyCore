@@ -181,7 +181,6 @@ class AdaptivePurePursuit:
         dy = lookahead_point[1] - current_pos[1]
         cos_yaw = math.cos(current_yaw)
         sin_yaw = math.sin(current_yaw)
-        x_ld = cos_yaw * dx + sin_yaw * dy
         y_ld = -sin_yaw * dx + cos_yaw * dy
         curvature_term = 2.0 * y_ld / max(ld**2, 1e-6)
         steering = math.atan(self.wheelbase * curvature_term)
@@ -197,34 +196,6 @@ class AdaptivePurePursuit:
             "cross_track_error": cross_track_error,
         }
         return steering, debug
-
-
-class SteeringFilter:
-    """Rate limiter + exponential smoothing to remove oscillations."""
-
-    def __init__(self, rate_limit: float, alpha: float):
-        self.rate_limit = max(rate_limit, 0.0)
-        self.alpha = float(np.clip(alpha, 0.0, 1.0))
-        self._last_value = 0.0
-        self._last_time = None  # seconds
-
-    def update_gains(self, rate_limit: float, alpha: float) -> None:
-        self.rate_limit = max(rate_limit, 0.0)
-        self.alpha = float(np.clip(alpha, 0.0, 1.0))
-
-    def reset(self) -> None:
-        self._last_value = 0.0
-        self._last_time = None
-
-    def filter(self, target: float, now: float) -> float:
-        if self._last_time is not None and self.rate_limit > 0.0:
-            dt = max(now - self._last_time, 1e-3)
-            max_delta = self.rate_limit * dt
-            target = float(np.clip(target, self._last_value - max_delta, self._last_value + max_delta))
-        filtered = self.alpha * target + (1.0 - self.alpha) * self._last_value
-        self._last_value = filtered
-        self._last_time = now
-        return filtered
 
 
 class TrackingMetrics:
@@ -284,8 +255,6 @@ class PPTuningNode(Node):
         self.lateral_error_gain = self.declare_parameter('lateral_error_gain', 1.0).value
         self.heading_error_gain = self.declare_parameter('heading_error_gain', 0.4).value
         self.curvature_ff_gain = self.declare_parameter('curvature_ff_gain', 0.1).value
-        self.steering_rate_limit = self.declare_parameter('steering_rate_limit', 2.5).value
-        self.steering_smoothing_alpha = self.declare_parameter('steering_smoothing_alpha', 0.4).value
         self.command_frequency = self.declare_parameter('command_frequency', 50.0).value
         self.figure8_radius = self.declare_parameter('figure8_radius', 1.6).value
         self.use_external_path = self.declare_parameter('use_external_path', False).value
@@ -313,10 +282,6 @@ class PPTuningNode(Node):
             heading_error_gain=self.heading_error_gain,
             curvature_ff_gain=self.curvature_ff_gain,
             max_steering=self.max_steering,
-        )
-        self.steering_filter = SteeringFilter(
-            rate_limit=self.steering_rate_limit,
-            alpha=self.steering_smoothing_alpha,
         )
         self.metrics = TrackingMetrics(window=self.metrics_window)
         self.current_pos = np.array([0.0, 0.0])
@@ -346,12 +311,6 @@ class PPTuningNode(Node):
                 'heading_error_gain', 'curvature_ff_gain', 'max_steering'
             }:
                 controller_updates[name] = float(value)
-            elif name == 'steering_rate_limit':
-                self.steering_rate_limit = float(value)
-                self.steering_filter.update_gains(self.steering_rate_limit, self.steering_filter.alpha)
-            elif name == 'steering_smoothing_alpha':
-                self.steering_smoothing_alpha = float(value)
-                self.steering_filter.update_gains(self.steering_filter.rate_limit, self.steering_smoothing_alpha)
             elif name == 'target_speed':
                 self.target_speed = float(value)
             elif name == 'log_interval':
@@ -429,21 +388,20 @@ class PPTuningNode(Node):
             self.current_velocity,
             cross_track,
         )
-        filtered_steering = self.steering_filter.filter(steering_cmd, now)
-        self.metrics.update(cross_track, debug['heading_error'], filtered_steering)
+        self.metrics.update(cross_track, debug['heading_error'], steering_cmd)
         
         cmd = AckermannDriveStamped()
         cmd.header.stamp = self.get_clock().now().to_msg()
         cmd.header.frame_id = 'base_link'
         cmd.drive.speed = float(self.target_speed)
-        cmd.drive.steering_angle = filtered_steering
+        cmd.drive.steering_angle = steering_cmd
         self.publisher.publish(cmd)
 
         if now - self._last_log_time > self.log_interval:
             self._last_log_time = now
             self.get_logger().info(
                 f"v={self.current_velocity:.2f}m/s -> target={self.target_speed:.2f} | "
-                f"δ={filtered_steering:.3f}rad | ld={debug['lookahead']:.2f}m | "
+                f"δ={steering_cmd:.3f}rad | ld={debug['lookahead']:.2f}m | "
                 f"cte={cross_track:.3f}m | {self.metrics.summary()}"
             )
 

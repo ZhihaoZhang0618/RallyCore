@@ -27,6 +27,10 @@ import math
 import time
 
 
+def _angle_wrap(angle: float) -> float:
+    """Wrap any angle to [-pi, pi]."""
+    return math.atan2(math.sin(angle), math.cos(angle))
+
 
 
 class CalibrationTier:
@@ -48,8 +52,8 @@ class CalibrationTier:
                 'v_target': 1.5,
                 'time_start': 0,
                 'time_end': 40,
-                'current_min': 5.0,
-                'current_max': 15.0,
+                'current_min': 0.0,
+                'current_max': 150.0,
                 'description': 'Low speed tier (1.5 m/s) - Coulomb friction dominant'
             },
             {
@@ -57,8 +61,8 @@ class CalibrationTier:
                 'v_target': 3.0,
                 'time_start': 40,
                 'time_end': 80,
-                'current_min': 8.0,
-                'current_max': 20.0,
+                'current_min': 0.0,
+                'current_max': 150.0,
                 'description': 'Mid speed tier (3.0 m/s) - Transition region'
             },
             {
@@ -66,8 +70,8 @@ class CalibrationTier:
                 'v_target': 5.0,
                 'time_start': 80,
                 'time_end': 120,
-                'current_min': 10.0,
-                'current_max': 25.0,
+                'current_min': 0.0,
+                'current_max': 150.0,
                 'description': 'High speed tier (5.0 m/s) - Back-EMF significant'
             }
         ]
@@ -202,7 +206,7 @@ class Figure8Trajectory:
             np.ndarray: Shape (N, 2) containing trajectory points
         """
         # Right circle centered at (R, 0)
-        theta1 = np.linspace(0, 2*np.pi, self.points_per_circle)
+        theta1 = np.linspace(0, 2*np.pi, self.points_per_circle, endpoint=False)
         right_circle_x = self.R + self.R * np.cos(theta1)
         right_circle_y = self.R * np.sin(theta1)
         
@@ -244,7 +248,7 @@ class Figure8Trajectory:
         
         return closest_point, min_idx_global, distance
     
-    def get_lookahead_point(self, current_idx: int, lookahead_distance: float) -> np.ndarray:
+    def get_lookahead_point(self, current_idx: int, lookahead_distance: float) -> tuple:
         """
         Get lookahead point along trajectory at specified distance ahead.
         
@@ -253,31 +257,82 @@ class Figure8Trajectory:
             lookahead_distance: Look-ahead distance (meters)
             
         Returns:
-            np.ndarray: Lookahead point [x, y]
+            tuple: (lookahead_point, lookahead_idx)
+                lookahead_point: np.ndarray [x, y]
+                lookahead_idx: int, index of lookahead point
         """
         # Simple linear search for lookahead point
-        idx = current_idx
+        idx = current_idx % self.trajectory_length
         cumulative_dist = 0.0
         
-        while cumulative_dist < lookahead_distance and idx < self.trajectory_length - 1:
+        while cumulative_dist < lookahead_distance:
+            next_idx = (idx + 1) % self.trajectory_length
             segment_dist = np.linalg.norm(
-                self.trajectory[idx + 1] - self.trajectory[idx]
+                self.trajectory[next_idx] - self.trajectory[idx]
             )
             if cumulative_dist + segment_dist >= lookahead_distance:
                 # Interpolate within segment
-                ratio = (lookahead_distance - cumulative_dist) / segment_dist
+                ratio = (lookahead_distance - cumulative_dist) / max(segment_dist, 1e-6)
                 lookahead_point = (
                     self.trajectory[idx] + 
-                    ratio * (self.trajectory[idx + 1] - self.trajectory[idx])
+                    ratio * (self.trajectory[next_idx] - self.trajectory[idx])
                 )
-                return lookahead_point
+                return lookahead_point, next_idx
             
             cumulative_dist += segment_dist
-            idx += 1
+            idx = next_idx
         
-        # If we reach the end, wrap around
-        idx = idx % self.trajectory_length
-        return self.trajectory[idx]
+        # If we reach the end, return current point
+        return self.trajectory[idx], idx
+    
+    def get_heading(self, idx: int) -> float:
+        """
+        Get trajectory heading (tangent direction) at specified index.
+        
+        Args:
+            idx: Index on trajectory
+            
+        Returns:
+            float: Heading angle (radians) in global frame
+        """
+        prev_pt = self.trajectory[(idx - 1) % self.trajectory_length]
+        next_pt = self.trajectory[(idx + 1) % self.trajectory_length]
+        return math.atan2(next_pt[1] - prev_pt[1], next_pt[0] - prev_pt[0])
+    
+    def get_curvature(self, idx: int) -> float:
+        """
+        Estimate path curvature at specified index using Menger curvature.
+        
+        Menger curvature: κ = 4*Area / (a*b*c)
+        where a, b, c are side lengths of triangle formed by 3 consecutive points.
+        
+        Args:
+            idx: Index on trajectory
+            
+        Returns:
+            float: Curvature (1/m), positive for left turn, negative for right turn
+        """
+        p_prev = self.trajectory[(idx - 1) % self.trajectory_length]
+        p_curr = self.trajectory[idx % self.trajectory_length]
+        p_next = self.trajectory[(idx + 1) % self.trajectory_length]
+        
+        # Triangle side lengths
+        a = np.linalg.norm(p_curr - p_prev)
+        b = np.linalg.norm(p_next - p_curr)
+        c = np.linalg.norm(p_next - p_prev)
+        
+        denom = max(a * b * c, 1e-6)
+        if denom < 1e-6:
+            return 0.0
+        
+        # Signed area using cross product
+        area = (
+            p_prev[0] * (p_curr[1] - p_next[1]) +
+            p_curr[0] * (p_next[1] - p_prev[1]) +
+            p_next[0] * (p_prev[1] - p_curr[1])
+        ) / 2.0
+        
+        return 4.0 * area / denom
     
     def is_in_curve(self, trajectory_idx: int) -> bool:
         """
@@ -317,28 +372,45 @@ class Figure8Trajectory:
 
 
 class PurePursuitController:
-    """Pure Pursuit trajectory tracking controller for Ackermann steered vehicles"""
+    """
+    Enhanced Pure Pursuit trajectory tracking controller with:
+    1. Lateral error compensation (standard Pure Pursuit)
+    2. Heading error compensation (reduces oscillation)
+    3. Curvature feed-forward (improves cornering)
+    """
     
-    def __init__(self, wheelbase: float = 0.33, lookahead_gain: float = 1.5,
-                 min_lookahead: float = 0.3, max_steering: float = 0.30):
+    def __init__(self, wheelbase: float = 0.33, lookahead_gain: float = 1.6,
+                 min_lookahead: float = 0.3, max_lookahead: float = 3.5,
+                 lateral_error_gain: float = 1.0,
+                 heading_error_gain: float = 0.4,
+                 curvature_ff_gain: float = 0.1,
+                 max_steering: float = 0.35):
         """
-        Initialize Pure Pursuit controller.
+        Initialize Enhanced Pure Pursuit controller.
         
         Args:
             wheelbase: Distance from front to rear axle (meters)
             lookahead_gain: Gain for dynamic look-ahead distance (ld = k*v + min_lookahead)
             min_lookahead: Minimum lookahead distance (meters)
+            max_lookahead: Maximum lookahead distance (meters)
+            lateral_error_gain: Gain for lateral error term (1.0 = standard PP)
+            heading_error_gain: Gain for heading error compensation (0.0 = disabled)
+            curvature_ff_gain: Gain for curvature feed-forward (0.0 = disabled)
             max_steering: Maximum steering angle (radians)
         """
         self.wheelbase = wheelbase
         self.lookahead_gain = lookahead_gain
         self.min_lookahead = min_lookahead
+        self.max_lookahead = max_lookahead
+        self.lateral_error_gain = lateral_error_gain
+        self.heading_error_gain = heading_error_gain
+        self.curvature_ff_gain = curvature_ff_gain
         self.max_steering_angle = max_steering
         
-    def compute_lookahead_distance(self, velocity: float) -> float:
+    def compute_lookahead(self, velocity: float) -> float:
         """
         Compute adaptive lookahead distance based on velocity.
-        ld = k*v + min_lookahead
+        ld = k*v + min_lookahead, clipped to [min_lookahead, max_lookahead]
         
         Args:
             velocity: Current velocity (m/s)
@@ -346,56 +418,69 @@ class PurePursuitController:
         Returns:
             float: Lookahead distance (meters)
         """
-        return max(self.lookahead_gain * abs(velocity) + self.min_lookahead, 
-                   self.min_lookahead)
+        ld = self.lookahead_gain * abs(velocity) + self.min_lookahead
+        return float(np.clip(ld, self.min_lookahead, self.max_lookahead))
     
     def compute_steering(self, current_pos: np.ndarray, current_yaw: float,
-                        lookahead_point: np.ndarray, velocity: float) -> float:
+                        lookahead_point: np.ndarray, lookahead_heading: float,
+                        path_curvature: float, velocity: float) -> tuple:
         """
-        Compute steering angle using Pure Pursuit algorithm.
+        Compute steering angle using Enhanced Pure Pursuit algorithm.
         
-        Pure Pursuit law: δ = arctan(2*L*e / ld²)
-        where L is wheelbase, e is cross-track error, ld is lookahead distance
+        Three-term control law:
+        1. Lateral term: δ_lat = arctan(L * 2*y_ld / ld²) * lateral_gain
+        2. Heading term: δ_head = heading_gain * (ψ_path - ψ_vehicle)
+        3. Curvature FF: δ_ff = curvature_gain * κ_path
         
         Args:
             current_pos: Current position [x, y]
             current_yaw: Current yaw angle (rad)
             lookahead_point: Target lookahead point [x, y]
+            lookahead_heading: Path heading at lookahead point (rad)
+            path_curvature: Path curvature at lookahead point (1/m)
             velocity: Current forward velocity (m/s)
             
         Returns:
-            float: Steering angle command (rad), clipped to [-max_steering, +max_steering]
+            tuple: (steering_angle, debug_info)
+                steering_angle: Steering command (rad), clipped to [-max, +max]
+                debug_info: dict with diagnostic values
         """
-        # Vector from current position to lookahead point
-        delta_x = lookahead_point[0] - current_pos[0]
-        delta_y = lookahead_point[1] - current_pos[1]
+        # Compute lookahead distance
+        ld = max(self.compute_lookahead(velocity), 1e-3)
         
-        # Distance to lookahead point
-        distance = np.sqrt(delta_x**2 + delta_y**2)
+        # Transform lookahead point to vehicle frame
+        dx = lookahead_point[0] - current_pos[0]
+        dy = lookahead_point[1] - current_pos[1]
+        cos_yaw = math.cos(current_yaw)
+        sin_yaw = math.sin(current_yaw)
+        y_ld = -sin_yaw * dx + cos_yaw * dy  # Lateral offset in vehicle frame
         
-        if distance < 1e-6:
-            return 0.0
+        # Term 1: Lateral error compensation (standard Pure Pursuit)
+        curvature_term = 2.0 * y_ld / max(ld**2, 1e-6)
+        steering = math.atan(self.wheelbase * curvature_term)
+        steering *= self.lateral_error_gain
         
-        # Angle to lookahead point in global frame
-        angle_to_target = np.arctan2(delta_y, delta_x)
+        # Term 2: Heading error compensation
+        heading_error = _angle_wrap(lookahead_heading - current_yaw)
+        steering += self.heading_error_gain * heading_error
         
-        # Relative angle (error)
-        angle_error = angle_to_target - current_yaw
-        
-        # Normalize angle error to [-pi, pi]
-        angle_error = np.arctan2(np.sin(angle_error), np.cos(angle_error))
-        
-        # Pure Pursuit law: steering angle proportional to cross-track error
-        # delta = atan2(2 * L * sin(alpha) / distance, 1)
-        cross_track_error = distance * np.sin(angle_error)
-        steering_angle = np.arctan2(2.0 * self.wheelbase * cross_track_error, 
-                                    distance**2)
+        # Term 3: Curvature feed-forward
+        steering += self.curvature_ff_gain * path_curvature
         
         # Clip steering angle
-        steering_angle = np.clip(steering_angle, -self.max_steering_angle, 
-                                self.max_steering_angle)
+        steering = float(np.clip(steering, -self.max_steering_angle, 
+                                self.max_steering_angle))
         
-        return steering_angle
+        # Debug info
+        debug_info = {
+            'lookahead_distance': ld,
+            'lateral_offset': y_ld,
+            'heading_error': heading_error,
+            'curvature_term': curvature_term,
+            'path_curvature': path_curvature
+        }
+        
+        return steering, debug_info
 
 
 class CurrentAccelCalibNode(Node):
@@ -406,7 +491,12 @@ class CurrentAccelCalibNode(Node):
         
         # Declare parameters
         self.wheelbase = self.declare_parameter('wheelbase', 0.33).value
-        self.lookahead_gain = self.declare_parameter('lookahead_gain', 1.5).value
+        self.lookahead_gain = self.declare_parameter('lookahead_gain', 1.6).value
+        self.min_lookahead = self.declare_parameter('min_lookahead', 0.3).value
+        self.max_lookahead = self.declare_parameter('max_lookahead', 3.5).value
+        self.lateral_error_gain = self.declare_parameter('lateral_error_gain', 1.0).value
+        self.heading_error_gain = self.declare_parameter('heading_error_gain', 0.4).value
+        self.curvature_ff_gain = self.declare_parameter('curvature_ff_gain', 0.1).value
         self.figure8_radius = self.declare_parameter('figure8_radius', 1.6).value  # Updated from 1.4
         self.command_frequency = self.declare_parameter('command_frequency', 50).value  # Hz
         self.calibration_mode = self.declare_parameter('calibration_mode', 'acceleration').value  # 'acceleration' or 'braking'
@@ -461,7 +551,13 @@ class CurrentAccelCalibNode(Node):
         self.trajectory = Figure8Trajectory(R=self.figure8_radius)
         self.controller = PurePursuitController(
             wheelbase=self.wheelbase,
-            lookahead_gain=self.lookahead_gain
+            lookahead_gain=self.lookahead_gain,
+            min_lookahead=self.min_lookahead,
+            max_lookahead=self.max_lookahead,
+            lateral_error_gain=self.lateral_error_gain,
+            heading_error_gain=self.heading_error_gain,
+            curvature_ff_gain=self.curvature_ff_gain,
+            max_steering=0.35
         )
         
         # Calibration state
@@ -496,7 +592,7 @@ class CurrentAccelCalibNode(Node):
         self.current_yaw = self._quaternion_to_yaw(quat.x, quat.y, quat.z, quat.w)
         
         # Extract velocity (magnitude)
-        self.current_velocity = np.sqrt(
+        self.current_velocity = math.sqrt(
             msg.twist.twist.linear.x**2 + 
             msg.twist.twist.linear.y**2
         )
@@ -511,7 +607,7 @@ class CurrentAccelCalibNode(Node):
     @staticmethod
     def _quaternion_to_yaw(qx: float, qy: float, qz: float, qw: float) -> float:
         """Convert quaternion to yaw angle (rad)"""
-        yaw = np.arctan2(
+        yaw = math.atan2(
             2.0 * (qw * qz + qx * qy),
             1.0 - 2.0 * (qy**2 + qz**2)
         )
@@ -552,7 +648,7 @@ class CurrentAccelCalibNode(Node):
                     current_A = tier['current_min'] + progress * (tier['current_max'] - tier['current_min'])
                     
                     # Determine control mode based on trajectory position (curve vs straight)
-                    jerk_mode = 2.0 if self.trajectory.is_in_curve(self.trajectory_idx) else 1.0
+                    jerk_mode = 2.0 if self.trajectory.is_in_curve(self.trajectory_idx) else 0.0
                     
                     return f"{tier['name']} (target {tier['v_target']}m/s)", current_A, False, jerk_mode
             
@@ -596,16 +692,22 @@ class CurrentAccelCalibNode(Node):
                 self.trajectory.get_closest_point(self.current_pos, self.trajectory_idx)
             
             # Compute adaptive lookahead distance based on velocity
-            lookahead_distance = self.controller.compute_lookahead_distance(self.current_velocity)
-            lookahead_point = self.trajectory.get_lookahead_point(
+            lookahead_distance = self.controller.compute_lookahead(self.current_velocity)
+            lookahead_point, lookahead_idx = self.trajectory.get_lookahead_point(
                 self.trajectory_idx, lookahead_distance
             )
             
-            # Compute steering angle using Pure Pursuit
-            steering_angle = self.controller.compute_steering(
+            # Get trajectory heading and curvature at lookahead point
+            lookahead_heading = self.trajectory.get_heading(lookahead_idx)
+            path_curvature = self.trajectory.get_curvature(lookahead_idx)
+            
+            # Compute steering angle using Enhanced Pure Pursuit
+            steering_angle, debug_info = self.controller.compute_steering(
                 self.current_pos,
                 self.current_yaw,
                 lookahead_point,
+                lookahead_heading,
+                path_curvature,
                 self.current_velocity
             )
             
@@ -632,8 +734,8 @@ class CurrentAccelCalibNode(Node):
                 self.get_logger().info(
                     f"[{stage_name}] t={elapsed_time:.1f}s | "
                     f"I={current_A:.1f}A | v={self.current_velocity:.2f}m/s | "
-                    f"δ={steering_angle:.3f}rad | "
-                    f"cte={cross_track_error:.2f}m | {mode_str}"
+                    f"δ={steering_angle:.3f}rad | ld={debug_info['lookahead_distance']:.2f}m | "
+                    f"cte={cross_track_error:.2f}m | h_err={debug_info['heading_error']:.3f}rad | {mode_str}"
                 )
         
         # Publish command

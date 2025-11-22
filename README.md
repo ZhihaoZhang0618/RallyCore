@@ -101,16 +101,15 @@ ros2 run rqt_reconfigure rqt_reconfigure
 
 **📋 3-Tier Calibration System:**
 | Tier | Duration | Target Speed | Current Range | Purpose |
-|------|----------|--------------|---------------|---------|
-| 🐌 LOW_SPEED | 0-40s | 1.5 m/s | 5→15 A | Coulomb friction characteristics |
-| 📈 MID_SPEED | 40-80s | 3.0 m/s | 8→20 A | Linear drag characteristics |
-| ⚡ HIGH_SPEED | 80-120s | 5.0 m/s | 10→25 A | High-speed EMF characteristics |
+|------|----------|--------------|---------------|------|
+| 🐌 LOW_SPEED | 0-40s | 1.5 m/s | 0→150 A | Coulomb friction characteristics |
+| 📈 MID_SPEED | 40-80s | 3.0 m/s | 0→150 A | Linear drag characteristics |
+| ⚡ HIGH_SPEED | 80-120s | 5.0 m/s | 0→150 A | High-speed EMF characteristics |
 
 **🚀 Quick Start:**
 ```bash
 # 1️⃣ Start hardware and SLAM
-ros2 launch f1tenth_system base_orin_livox_bringup_v2.launch.py
-ros2 launch f1tenth_system slam.launch.py
+ros2 launch f1tenth_system base_orin_livox_mapping_v2.launch.py
 
 # 2️⃣ Optional: Record rosbag for later analysis
 ros2 bag record -a -o calibration_run
