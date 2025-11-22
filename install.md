@@ -216,10 +216,6 @@ pip3 install pandas scipy scikit-learn
 ### Step 1: Create Workspace Structure
 
 ```bash
-# Create main workspace
-mkdir -p ~/ros2_ws/src
-cd ~/ros2_ws/src
-
 # Clone RallyCore
 git clone --recursive git@github.com:ZhihaoZhang0618/RallyCore.git
 
@@ -249,7 +245,7 @@ echo "source ~/livox_ws/install/setup.bash" >> ~/.bashrc
 ### Step 3: Build RallyCore
 
 ```bash
-cd ~/ros2_ws
+cd ~/RallyCore
 
 # Build all packages
 colcon build --symlink-install
@@ -258,7 +254,7 @@ colcon build --symlink-install
 colcon build --packages-select f1tenth_system --symlink-install
 
 # Source workspace
-echo "source ~/ros2_ws/install/setup.bash" >> ~/.bashrc
+echo "source ~/RallyCore/install/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
 
@@ -274,7 +270,7 @@ source ~/.bashrc
 
 ```bash
 # Copy udev rules for consistent device naming
-cd ~/ros2_ws/src/RallyCore
+cd ~/RallyCore
 sudo cp rulesForNUC/*.rules /etc/udev/rules.d/
 
 # Reload udev rules
@@ -380,7 +376,7 @@ ros2 topic echo /livox/lidar
 
 **Solution:**
 ```bash
-cd ~/ros2_ws
+cd ~/RallyCore
 colcon build --packages-select f1tenth_system
 source install/setup.bash
 ```
@@ -392,7 +388,7 @@ source install/setup.bash
 **Solution:**
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/ros2_ws/install/setup.bash
+source ~/RallyCore/install/setup.bash
 ```
 
 ### ❌ Error: USB device not found (VESC/IMU/RC)
@@ -405,7 +401,7 @@ source ~/ros2_ws/install/setup.bash
 ls /dev/ttyUSB* /dev/ttyACM*
 
 # Re-apply udev rules
-sudo cp ~/ros2_ws/src/RallyCore/rulesForNUC/*.rules /etc/udev/rules.d/
+sudo cp ~/RallyCore/rulesForNUC/*.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
@@ -439,7 +435,7 @@ cat ~/livox_ws/src/livox_ros_driver2/config/MID360_config.json
 **Solution:**
 ```bash
 # Install missing dependencies
-cd ~/ros2_ws
+cd ~/RallyCore
 rosdep install --from-paths src --ignore-src -r -y
 
 # Or manually install specific package
@@ -490,7 +486,7 @@ Add these to `~/.bashrc` or `~/.zshrc` for convenience:
 ```bash
 # ROS2 environment
 alias source_ros='source /opt/ros/humble/setup.bash'
-alias source_ws='source ~/ros2_ws/install/setup.bash'
+alias source_ws='source ~/RallyCore/install/setup.bash'
 alias source_livox='source ~/livox_ws/install/setup.bash'
 
 # Launch shortcuts
@@ -505,8 +501,8 @@ alias pp_tune='ros2 run f1tenth_system pp_param_tuner'
 alias calib='ros2 launch f1tenth_system calib_launch.py'
 
 # Build shortcuts
-alias build_ws='cd ~/ros2_ws && colcon build --symlink-install'
-alias build_f1='cd ~/ros2_ws && colcon build --packages-select f1tenth_system --symlink-install'
+alias build_ws='cd ~/RallyCore && colcon build --symlink-install'
+alias build_f1='cd ~/RallyCore && colcon build --packages-select f1tenth_system --symlink-install'
 
 # Topic monitoring
 alias topics='ros2 topic list'
