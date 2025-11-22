@@ -277,7 +277,7 @@ class PPTuningNode(Node):
             floating_point_range=[FloatingPointRange(from_value=0.5, to_value=5.0, step=0.1)]
         )
         self.wheelbase = self.declare_parameter('wheelbase', 0.33).value
-        self.max_steering = self.declare_parameter('max_steering', 0.32).value
+        self.max_steering = self.declare_parameter('max_steering', 0.35).value
         self.lookahead_gain = self.declare_parameter('lookahead_gain', 1.6, lookahead_desc).value
         self.min_lookahead = self.declare_parameter('min_lookahead', 0.30).value
         self.max_lookahead = self.declare_parameter('max_lookahead', 3.5).value
@@ -334,7 +334,7 @@ class PPTuningNode(Node):
         self.publisher = self.create_publisher(AckermannDriveStamped, '/drive', 10)
         self.trajectory_pub = self.create_publisher(Path, '/pp/current_trajectory', 10)
         self.create_timer(1.0 / max(self.command_frequency, 1.0), self._control_loop)
-        self.create_timer(2.0, self._publish_trajectory)  # Publish trajectory every 2 seconds
+        self.create_timer(5.0, self._publish_trajectory)  # Publish trajectory every 5 seconds
 
     def _on_parameter_change(self, params: List[Parameter]) -> SetParametersResult:
         controller_updates: Dict[str, float] = {}
