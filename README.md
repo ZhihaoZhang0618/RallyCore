@@ -3,7 +3,7 @@
 ## 🌟 Overview
 RallyCore is a ROS2- and Nav2-based software stack designed for rally car, which is a rally car for autonomous vehicle development at all kinds of complex terrains. 
 
-All the code was written during my free time after work while I was a Research Assistant at [ZJU FAST Lab](https://github.com/ZJU-FAST-Lab). I am deeply grateful to the wonderful people at ZJU FAST Lab for their support and guidance. Even though this is just a small project, their assistance was invaluable.
+The hardware setup and basic software framework were developed during my time as a Research Assistant at [ZJU FAST Lab](https://github.com/ZJU-FAST-Lab). I am deeply grateful to the wonderful people at ZJU FAST Lab for their invaluable support and guidance. Currently, I am pursuing my MPhil at PolyU, working in the AIMS Lab. Advanced algorithm development and features will be gradually implemented during my spare time throughout my graduate studies. Stay tuned for more updates!
 
 ## 📦 Installation
 
@@ -280,7 +280,8 @@ This project would not be possible without the use of multiple great open-source
 - ⚡ [Veddar VESC Interface](https://github.com/f1tenth/vesc)
 - 🗺️ [FASTLIO2_ROS2](https://github.com/liangheming/FASTLIO2_ROS2.git)
 
-##### 🏛️ All the code was written at FAST Lab, Zhejiang University.
+##### 🏛️ Hardware and basic software were developed at FAST Lab, Zhejiang University.
+##### 🎓 Currently pursuing MPhil at PolyU AIMS Lab, with ongoing development in progress.
 
 ---
 
