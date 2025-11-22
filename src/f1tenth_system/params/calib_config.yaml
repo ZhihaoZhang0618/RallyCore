@@ -9,10 +9,11 @@ max_steering_angle: 0.30  # Maximum steering angle (radians, ≈ 17°)
 lookahead_gain: 1.5  # Lookahead distance gain: ld = k * v + ld_min
 lookahead_distance_min: 0.3  # Minimum lookahead distance (meters)
 
-# Figure-8 Trajectory Parameters
-figure8_radius: 1.4  # Radius of each circular arc (meters)
-figure8_center_distance: 2.8  # Distance between circle centers (meters)
-trajectory_points_per_circle: 200  # Resolution of trajectory discretization
+# Racetrack Trajectory Parameters (Stadium Shape)
+track_radius: 2.0  # Semicircle turn radius (meters)
+track_straight_length: 6.0  # Straight section length (meters)
+track_points_per_straight: 150  # Number of points per straight section
+track_points_per_semicircle: 100  # Number of points per semicircular turn
 
 # Control Loop
 command_frequency: 50  # Publication frequency (Hz)

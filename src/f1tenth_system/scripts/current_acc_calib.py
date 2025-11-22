@@ -178,21 +178,23 @@ class BrakingCalibrationMode:
 
 
 class Figure8Trajectory:
-    """Generate figure-8 reference trajectory with given parameters"""
+    """Generate racetrack (stadium) trajectory: straight lines + semicircular turns"""
     
-    def __init__(self, R: float = 1.6, center_distance: float = 3.2, 
-                 points_per_circle: int = 200):
+    def __init__(self, R: float = 2.0, straight_length: float = 6.0, 
+                 points_per_straight: int = 150, points_per_semicircle: int = 100):
         """
-        Initialize figure-8 trajectory.
+        Initialize racetrack trajectory (like a school stadium).
         
         Args:
-            R: Radius of each circular arc (meters), default 1.6 (increased from 1.4)
-            center_distance: Distance between two circle centers (meters)
-            points_per_circle: Number of points per circle for trajectory
+            R: Radius of semicircular turns (meters), default 2.0 (larger for smoother turns)
+            straight_length: Length of each straight section (meters), default 6.0
+            points_per_straight: Number of points per straight section
+            points_per_semicircle: Number of points per semicircular turn
         """
         self.R = R
-        self.center_distance = center_distance
-        self.points_per_circle = points_per_circle
+        self.straight_length = straight_length
+        self.points_per_straight = points_per_straight
+        self.points_per_semicircle = points_per_semicircle
         
         # Generate trajectory
         self.trajectory = self._generate_trajectory()
@@ -200,24 +202,43 @@ class Figure8Trajectory:
         
     def _generate_trajectory(self) -> np.ndarray:
         """
-        Generate figure-8 trajectory as [x, y] points.
+        Generate racetrack trajectory: straight-line sections + semicircular turns.
+        
+        Layout (like a stadium):
+        - Bottom straight: accelerate from left to right (current calibration)
+        - Right semicircle: decelerate and turn around (speed control)
+        - Top straight: accelerate from right to left
+        - Left semicircle: decelerate and turn around (speed control)
         
         Returns:
             np.ndarray: Shape (N, 2) containing trajectory points
         """
-        # Right circle centered at (R, 0)
-        theta1 = np.linspace(0, 2*np.pi, self.points_per_circle, endpoint=False)
-        right_circle_x = self.R + self.R * np.cos(theta1)
-        right_circle_y = self.R * np.sin(theta1)
+        # Bottom straight line: from (-straight_length/2, 0) to (straight_length/2, 0)
+        bottom_x = np.linspace(-self.straight_length/2, self.straight_length/2, 
+                              self.points_per_straight, endpoint=False)
+        bottom_y = np.zeros(self.points_per_straight)
         
-        # Left circle centered at (-R, 0)
-        left_circle_x = -self.R + self.R * np.cos(theta1)
-        left_circle_y = self.R * np.sin(theta1)
+        # Right semicircle: clockwise turn from bottom to top
+        # Center at (straight_length/2, R), from 270° to 90°
+        theta_right = np.linspace(-np.pi/2, np.pi/2, self.points_per_semicircle, endpoint=False)
+        right_x = self.straight_length/2 + self.R * np.cos(theta_right)
+        right_y = self.R + self.R * np.sin(theta_right)
         
-        # Combine and close the loop
-        trajectory = np.vstack([
-            np.column_stack([right_circle_x, right_circle_y]),
-            np.column_stack([left_circle_x, left_circle_y])
+        # Top straight line: from (straight_length/2, 2*R) to (-straight_length/2, 2*R)
+        top_x = np.linspace(self.straight_length/2, -self.straight_length/2, 
+                           self.points_per_straight, endpoint=False)
+        top_y = np.full(self.points_per_straight, 2 * self.R)
+        
+        # Left semicircle: clockwise turn from top to bottom
+        # Center at (-straight_length/2, R), from 90° to 270°
+        theta_left = np.linspace(np.pi/2, 3*np.pi/2, self.points_per_semicircle, endpoint=False)
+        left_x = -self.straight_length/2 + self.R * np.cos(theta_left)
+        left_y = self.R + self.R * np.sin(theta_left)
+        
+        # Combine all sections into closed loop
+        trajectory = np.column_stack([
+            np.concatenate([bottom_x, right_x, top_x, left_x]),
+            np.concatenate([bottom_y, right_y, top_y, left_y])
         ])
         
         return trajectory
@@ -336,39 +357,37 @@ class Figure8Trajectory:
     
     def is_in_curve(self, trajectory_idx: int) -> bool:
         """
-        Determine if current position on trajectory is in a curve (circular arc) vs straight.
+        Determine if current position is in a curve (semicircle turn) vs straight section.
         
-        Figure-8 structure:
-        - Indices 0 to points_per_circle: Right circle (curve)
-        - Indices points_per_circle to 2*points_per_circle: Left circle (curve)
-        The transition points are essentially straight (diameter).
+        Racetrack structure:
+        - Segment 0: Bottom straight (indices 0 to points_per_straight) - STRAIGHT
+        - Segment 1: Right semicircle (points_per_straight to points_per_straight + points_per_semicircle) - CURVE
+        - Segment 2: Top straight (continuing from segment 1) - STRAIGHT
+        - Segment 3: Left semicircle (remaining indices) - CURVE
         
         Args:
             trajectory_idx: Current index on trajectory
             
         Returns:
-            bool: True if in circular curve, False if near transition/straight
+            bool: True if in semicircular turn (use speed control), False if in straight (use current control)
         """
-        # Identify which half we're in
-        half_length = self.points_per_circle
+        idx = trajectory_idx % self.trajectory_length
         
-        # Near the middle crossing point (transition between circles)
-        transition_zone = int(0.1 * half_length)  # ~10% of circle radius as transition zone
+        # Segment boundaries
+        bottom_end = self.points_per_straight
+        right_end = bottom_end + self.points_per_semicircle
+        top_end = right_end + self.points_per_straight
+        # left semicircle goes from top_end to trajectory_length
         
-        # Check if we're in transition region (middle of each circle)
-        right_circle_middle = half_length // 2
-        left_circle_middle = half_length + half_length // 2
-        
-        idx_in_circle = trajectory_idx % self.trajectory_length
-        
-        # If near middle of either circle, it's straighter
-        if abs(idx_in_circle - right_circle_middle) < transition_zone:
-            return False  # Near straight section of right circle
-        if abs(idx_in_circle - left_circle_middle) < transition_zone:
-            return False  # Near straight section of left circle
-        
-        # Otherwise in curve
-        return True
+        # Check which segment we're in
+        if idx < bottom_end:
+            return False  # Bottom straight - use current control for acceleration
+        elif idx < right_end:
+            return True   # Right semicircle - use speed control for deceleration/turn
+        elif idx < top_end:
+            return False  # Top straight - use current control for acceleration
+        else:
+            return True   # Left semicircle - use speed control for deceleration/turn
 
 
 class PurePursuitController:
@@ -497,7 +516,13 @@ class CurrentAccelCalibNode(Node):
         self.lateral_error_gain = self.declare_parameter('lateral_error_gain', 1.0).value
         self.heading_error_gain = self.declare_parameter('heading_error_gain', 0.4).value
         self.curvature_ff_gain = self.declare_parameter('curvature_ff_gain', 0.1).value
-        self.figure8_radius = self.declare_parameter('figure8_radius', 1.6).value  # Updated from 1.4
+        
+        # Racetrack trajectory parameters
+        self.track_radius = self.declare_parameter('track_radius', 2.0).value  # Semicircle radius (meters)
+        self.track_straight_length = self.declare_parameter('track_straight_length', 6.0).value  # Straight length (meters)
+        self.track_points_per_straight = self.declare_parameter('track_points_per_straight', 150).value
+        self.track_points_per_semicircle = self.declare_parameter('track_points_per_semicircle', 100).value
+        
         self.command_frequency = self.declare_parameter('command_frequency', 50).value  # Hz
         self.calibration_mode = self.declare_parameter('calibration_mode', 'acceleration').value  # 'acceleration' or 'braking'
         self.vehicle_mass = self.declare_parameter('vehicle_mass', 6.0).value  # kg
@@ -548,7 +573,12 @@ class CurrentAccelCalibNode(Node):
             self.calib_tier = CalibrationTier()
         
         # Trajectory and controller
-        self.trajectory = Figure8Trajectory(R=self.figure8_radius)
+        self.trajectory = Figure8Trajectory(
+            R=self.track_radius,
+            straight_length=self.track_straight_length,
+            points_per_straight=self.track_points_per_straight,
+            points_per_semicircle=self.track_points_per_semicircle
+        )
         self.controller = PurePursuitController(
             wheelbase=self.wheelbase,
             lookahead_gain=self.lookahead_gain,
@@ -573,7 +603,8 @@ class CurrentAccelCalibNode(Node):
         self.get_logger().info(
             f"Current-Acceleration Calibration Node initialized\n"
             f"  Wheelbase: {self.wheelbase} m\n"
-            f"  Figure-8 Radius: {self.figure8_radius} m (increased from 1.4m)\n"
+            f"  Racetrack Radius: {self.track_radius} m\n"
+            f"  Racetrack Straight Length: {self.track_straight_length} m\n"
             f"  Lookahead Gain: {self.lookahead_gain}\n"
             f"  Command Frequency: {self.command_frequency} Hz\n"
             f"  Calibration Mode: {self.calibration_mode}\n"
@@ -684,6 +715,7 @@ class CurrentAccelCalibNode(Node):
             # Calibration complete - send stop command
             cmd_msg.drive.steering_angle = 0.0
             cmd_msg.drive.acceleration = 0.0  # Stop
+            cmd_msg.drive.speed = 0.0
             cmd_msg.drive.jerk = 0.0
             self.get_logger().info("Calibration complete! Data recorded in rosbag.")
         else:
@@ -720,10 +752,7 @@ class CurrentAccelCalibNode(Node):
                 # Speed/hybrid control mode (curves) - maintain target speed
                 tier_idx = min(int(elapsed_time / 40.0), 2)
                 target_speed = self.calib_tier.tiers[tier_idx]['v_target']
-                
-                # Simple proportional speed feedback (in real system, use PID)
-                speed_error = target_speed - self.current_velocity
-                cmd_msg.drive.acceleration = 5.0 + 2.0 * speed_error  # P-control
+                cmd_msg.drive.target_speed = target_speed
                 mode_str = "SPEED_CONTROL"
             
             cmd_msg.drive.steering_angle = steering_angle

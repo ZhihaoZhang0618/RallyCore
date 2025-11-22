@@ -112,22 +112,42 @@ class TrajectoryHelper:
 
 
 class Figure8Trajectory(TrajectoryHelper):
-    """Classic figure-8 path used for PP testing."""
+    """Racetrack (stadium) path: straight lines for acceleration + semicircular turns."""
 
-    def __init__(self, radius: float = 1.6, points_per_circle: int = 200):
+    def __init__(self, radius: float = 2.0, straight_length: float = 6.0, 
+                 points_per_straight: int = 150, points_per_semicircle: int = 100):
         self.radius = radius
-        self.points_per_circle = points_per_circle
+        self.straight_length = straight_length
+        self.points_per_straight = points_per_straight
+        self.points_per_semicircle = points_per_semicircle
         super().__init__(self._generate())
 
     def _generate(self) -> np.ndarray:
-        theta = np.linspace(0.0, 2.0 * math.pi, self.points_per_circle, endpoint=False)
-        right = np.column_stack(
-            [self.radius + self.radius * np.cos(theta), self.radius * np.sin(theta)]
-        )
-        left = np.column_stack(
-            [-self.radius + self.radius * np.cos(theta), self.radius * np.sin(theta)]
-        )
-        return np.vstack([right, left])
+        # Bottom straight: left to right
+        bottom_x = np.linspace(-self.straight_length/2, self.straight_length/2, 
+                              self.points_per_straight, endpoint=False)
+        bottom_y = np.zeros(self.points_per_straight)
+        
+        # Right semicircle: bottom to top, center at (straight_length/2, radius)
+        theta_right = np.linspace(-np.pi/2, np.pi/2, self.points_per_semicircle, endpoint=False)
+        right_x = self.straight_length/2 + self.radius * np.cos(theta_right)
+        right_y = self.radius + self.radius * np.sin(theta_right)
+        
+        # Top straight: right to left
+        top_x = np.linspace(self.straight_length/2, -self.straight_length/2, 
+                           self.points_per_straight, endpoint=False)
+        top_y = np.full(self.points_per_straight, 2 * self.radius)
+        
+        # Left semicircle: top to bottom, center at (-straight_length/2, radius)
+        theta_left = np.linspace(np.pi/2, 3*np.pi/2, self.points_per_semicircle, endpoint=False)
+        left_x = -self.straight_length/2 + self.radius * np.cos(theta_left)
+        left_y = self.radius + self.radius * np.sin(theta_left)
+        
+        # Combine all sections
+        return np.column_stack([
+            np.concatenate([bottom_x, right_x, top_x, left_x]),
+            np.concatenate([bottom_y, right_y, top_y, left_y])
+        ])
 
     def regenerate(self, radius: float) -> None:
         self.radius = radius
@@ -256,7 +276,13 @@ class PPTuningNode(Node):
         self.heading_error_gain = self.declare_parameter('heading_error_gain', 0.4).value
         self.curvature_ff_gain = self.declare_parameter('curvature_ff_gain', 0.1).value
         self.command_frequency = self.declare_parameter('command_frequency', 50.0).value
-        self.figure8_radius = self.declare_parameter('figure8_radius', 1.6).value
+        
+        # Racetrack trajectory parameters
+        self.track_radius = self.declare_parameter('track_radius', 2.0).value
+        self.track_straight_length = self.declare_parameter('track_straight_length', 6.0).value
+        self.track_points_per_straight = self.declare_parameter('track_points_per_straight', 150).value
+        self.track_points_per_semicircle = self.declare_parameter('track_points_per_semicircle', 100).value
+        
         self.use_external_path = self.declare_parameter('use_external_path', False).value
         
         # Target speed with descriptor for easy tuning
@@ -271,7 +297,12 @@ class PPTuningNode(Node):
         self.add_on_set_parameters_callback(self._on_parameter_change)
 
     def _build_helpers(self) -> None:
-        self.figure8 = Figure8Trajectory(radius=self.figure8_radius)
+        self.figure8 = Figure8Trajectory(
+            radius=self.track_radius,
+            straight_length=self.track_straight_length,
+            points_per_straight=self.track_points_per_straight,
+            points_per_semicircle=self.track_points_per_semicircle
+        )
         self.external_traj: Optional[TrajectoryHelper] = None
         self.controller = AdaptivePurePursuit(
             wheelbase=self.wheelbase,
@@ -315,9 +346,24 @@ class PPTuningNode(Node):
                 self.target_speed = float(value)
             elif name == 'log_interval':
                 self.log_interval = max(float(value), 0.1)
-            elif name == 'figure8_radius':
-                self.figure8_radius = float(value)
-                self.figure8.regenerate(self.figure8_radius)
+            elif name == 'track_radius':
+                self.track_radius = float(value)
+                self.figure8.regenerate(self.track_radius)
+            elif name in ['track_straight_length', 'track_points_per_straight', 'track_points_per_semicircle']:
+                # Update trajectory parameters (requires regeneration with all params)
+                if name == 'track_straight_length':
+                    self.track_straight_length = float(value)
+                elif name == 'track_points_per_straight':
+                    self.track_points_per_straight = int(value)
+                elif name == 'track_points_per_semicircle':
+                    self.track_points_per_semicircle = int(value)
+                # Recreate trajectory with updated parameters
+                self.figure8 = Figure8Trajectory(
+                    radius=self.track_radius,
+                    straight_length=self.track_straight_length,
+                    points_per_straight=self.track_points_per_straight,
+                    points_per_semicircle=self.track_points_per_semicircle
+                )
             elif name == 'metrics_window':
                 self.metrics_window = int(max(value, 10))
                 self.metrics = TrackingMetrics(window=self.metrics_window)

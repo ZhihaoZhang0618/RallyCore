@@ -10,7 +10,8 @@ Usage:
 Optional arguments:
   calibration_mode:=acceleration  # Default: acceleration calibration
   calibration_mode:=braking       # Braking calibration (negative current)
-  figure8_radius:=1.6             # Figure-8 radius (m), increased from 1.4
+  track_radius:=2.0               # Racetrack semicircle radius (m)
+  track_straight_length:=6.0      # Racetrack straight length (m)
   vehicle_mass:=6.0               # Vehicle mass (kg)
   command_frequency:=50           # Control loop frequency (Hz)
   
@@ -46,10 +47,28 @@ def generate_launch_description():
         description='Pure Pursuit lookahead gain (ld = k*v + min_lookahead)'
     )
     
-    figure8_radius_arg = DeclareLaunchArgument(
-        'figure8_radius',
-        default_value='1.6',
-        description='Figure-8 trajectory radius (meters), increased from 1.4 to avoid wheel slip'
+    track_radius_arg = DeclareLaunchArgument(
+        'track_radius',
+        default_value='2.0',
+        description='Racetrack semicircle turn radius (meters)'
+    )
+    
+    track_straight_length_arg = DeclareLaunchArgument(
+        'track_straight_length',
+        default_value='6.0',
+        description='Racetrack straight section length (meters)'
+    )
+    
+    track_points_per_straight_arg = DeclareLaunchArgument(
+        'track_points_per_straight',
+        default_value='150',
+        description='Number of points per straight section'
+    )
+    
+    track_points_per_semicircle_arg = DeclareLaunchArgument(
+        'track_points_per_semicircle',
+        default_value='100',
+        description='Number of points per semicircular turn'
     )
     
     command_frequency_arg = DeclareLaunchArgument(
@@ -75,7 +94,10 @@ def generate_launch_description():
                 'calibration_mode': LaunchConfiguration('calibration_mode'),
                 'wheelbase': LaunchConfiguration('wheelbase'),
                 'lookahead_gain': LaunchConfiguration('lookahead_gain'),
-                'figure8_radius': LaunchConfiguration('figure8_radius'),
+                'track_radius': LaunchConfiguration('track_radius'),
+                'track_straight_length': LaunchConfiguration('track_straight_length'),
+                'track_points_per_straight': LaunchConfiguration('track_points_per_straight'),
+                'track_points_per_semicircle': LaunchConfiguration('track_points_per_semicircle'),
                 'command_frequency': LaunchConfiguration('command_frequency'),
                 'vehicle_mass': LaunchConfiguration('vehicle_mass'),
             }
@@ -93,14 +115,18 @@ def generate_launch_description():
     ld.add_action(calibration_mode_arg)
     ld.add_action(wheelbase_arg)
     ld.add_action(lookahead_gain_arg)
-    ld.add_action(figure8_radius_arg)
+    ld.add_action(track_radius_arg)
+    ld.add_action(track_straight_length_arg)
+    ld.add_action(track_points_per_straight_arg)
+    ld.add_action(track_points_per_semicircle_arg)
     ld.add_action(command_frequency_arg)
     ld.add_action(vehicle_mass_arg)
     
     # Add info messages
     ld.add_action(LogInfo(msg=['Starting Physics-Based Current-Acceleration Calibration']))
     ld.add_action(LogInfo(msg=['Calibration Mode: ', LaunchConfiguration('calibration_mode')]))
-    ld.add_action(LogInfo(msg=['Figure-8 Radius: ', LaunchConfiguration('figure8_radius'), ' m']))
+    ld.add_action(LogInfo(msg=['Racetrack Radius: ', LaunchConfiguration('track_radius'), ' m']))
+    ld.add_action(LogInfo(msg=['Straight Length: ', LaunchConfiguration('track_straight_length'), ' m']))
     ld.add_action(LogInfo(msg=['Vehicle Mass: ', LaunchConfiguration('vehicle_mass'), ' kg']))
     
     # Add node
