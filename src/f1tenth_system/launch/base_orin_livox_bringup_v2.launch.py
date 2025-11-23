@@ -147,7 +147,7 @@ def generate_launch_description():
             
             # 电流模式参数
             {'current_channel8_min_current': 3.0},
-            {'current_channel8_max_current': 20.0},
+            {'current_channel8_max_current': 120.0},
             
             # 转向参数
             {'steering_limit': 0.40},
@@ -160,7 +160,7 @@ def generate_launch_description():
         ],
         remappings=[
             # joystick_control_v2输出 -> vesc输入
-            ('/ackermann_cmd', '/ackermann_drive'),
+            ('/ackermann_cmd', '/ackermann_cmd'),
         ]
     )
     

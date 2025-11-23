@@ -48,6 +48,7 @@ install(
 install(
  PROGRAMS
   scripts/joystick_control.py
+  scripts/joystick_control_v2.py
   scripts/cmd_vel_to_ackermann_drive.py
  DESTINATION lib/${PROJECT_NAME}
 )

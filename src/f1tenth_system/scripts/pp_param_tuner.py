@@ -267,21 +267,59 @@ class PPTuningNode(Node):
             description='Lookahead gain multiplier for velocity',
             floating_point_range=[FloatingPointRange(from_value=0.5, to_value=5.0, step=0.1)]
         )
+        min_lookahead_desc = ParameterDescriptor(
+            description='Minimum lookahead distance (m)',
+            floating_point_range=[FloatingPointRange(from_value=0.1, to_value=2.0, step=0.05)]
+        )
+        max_lookahead_desc = ParameterDescriptor(
+            description='Maximum lookahead distance (m)',
+            floating_point_range=[FloatingPointRange(from_value=1.0, to_value=10.0, step=0.1)]
+        )
+        lateral_desc = ParameterDescriptor(
+            description='Lateral error gain',
+            floating_point_range=[FloatingPointRange(from_value=0.1, to_value=3.0, step=0.1)]
+        )
+        heading_desc = ParameterDescriptor(
+            description='Heading error gain',
+            floating_point_range=[FloatingPointRange(from_value=0.0, to_value=2.0, step=0.05)]
+        )
+        curvature_desc = ParameterDescriptor(
+            description='Curvature feedforward gain',
+            floating_point_range=[FloatingPointRange(from_value=0.0, to_value=1.0, step=0.01)]
+        )
+        
         self.wheelbase = self.declare_parameter('wheelbase', 0.33).value
         self.max_steering = self.declare_parameter('max_steering', 0.35).value
         self.lookahead_gain = self.declare_parameter('lookahead_gain', 1.6, lookahead_desc).value
-        self.min_lookahead = self.declare_parameter('min_lookahead', 0.30).value
-        self.max_lookahead = self.declare_parameter('max_lookahead', 3.5).value
-        self.lateral_error_gain = self.declare_parameter('lateral_error_gain', 1.0).value
-        self.heading_error_gain = self.declare_parameter('heading_error_gain', 0.4).value
-        self.curvature_ff_gain = self.declare_parameter('curvature_ff_gain', 0.1).value
+        self.min_lookahead = self.declare_parameter('min_lookahead', 0.30, min_lookahead_desc).value
+        self.max_lookahead = self.declare_parameter('max_lookahead', 3.5, max_lookahead_desc).value
+        self.lateral_error_gain = self.declare_parameter('lateral_error_gain', 1.0, lateral_desc).value
+        self.heading_error_gain = self.declare_parameter('heading_error_gain', 0.4, heading_desc).value
+        self.curvature_ff_gain = self.declare_parameter('curvature_ff_gain', 0.1, curvature_desc).value
         self.command_frequency = self.declare_parameter('command_frequency', 50.0).value
         
-        # Racetrack trajectory parameters
-        self.track_radius = self.declare_parameter('track_radius', 2.0).value
-        self.track_straight_length = self.declare_parameter('track_straight_length', 6.0).value
-        self.track_points_per_straight = self.declare_parameter('track_points_per_straight', 150).value
-        self.track_points_per_semicircle = self.declare_parameter('track_points_per_semicircle', 100).value
+        # Racetrack trajectory parameters with descriptors for live tuning
+        track_radius_desc = ParameterDescriptor(
+            description='Radius of the semicircular turns (m)',
+            floating_point_range=[FloatingPointRange(from_value=0.5, to_value=10.0, step=0.1)]
+        )
+        track_straight_desc = ParameterDescriptor(
+            description='Length of straight sections (m)',
+            floating_point_range=[FloatingPointRange(from_value=1.0, to_value=20.0, step=0.5)]
+        )
+        track_pts_straight_desc = ParameterDescriptor(
+            description='Number of points per straight section',
+            integer_range=[IntegerRange(from_value=10, to_value=500, step=10)]
+        )
+        track_pts_semicircle_desc = ParameterDescriptor(
+            description='Number of points per semicircle section',
+            integer_range=[IntegerRange(from_value=10, to_value=300, step=10)]
+        )
+        
+        self.track_radius = self.declare_parameter('track_radius', 2.0, track_radius_desc).value
+        self.track_straight_length = self.declare_parameter('track_straight_length', 6.0, track_straight_desc).value
+        self.track_points_per_straight = self.declare_parameter('track_points_per_straight', 150, track_pts_straight_desc).value
+        self.track_points_per_semicircle = self.declare_parameter('track_points_per_semicircle', 100, track_pts_semicircle_desc).value
         
         self.use_external_path = self.declare_parameter('use_external_path', False).value
         
@@ -331,7 +369,7 @@ class PPTuningNode(Node):
         self.trajectory_pub = self.create_publisher(Path, '/pp/current_trajectory', 10)
         self.lookahead_pub = self.create_publisher(PointStamped, '/pp/lookahead_point', 10)
         self.create_timer(1.0 / max(self.command_frequency, 1.0), self._control_loop)
-        self.create_timer(5.0, self._publish_trajectory)  # Publish trajectory every 5 seconds
+        self.create_timer(2.0, self._publish_trajectory)  # Publish trajectory every 5 seconds
 
     def _on_parameter_change(self, params: List[Parameter]) -> SetParametersResult:
         controller_updates: Dict[str, float] = {}
