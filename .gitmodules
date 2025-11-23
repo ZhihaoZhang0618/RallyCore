@@ -9,7 +9,7 @@
 	url = https://github.com/z1047941150/ackermann_mux.git
 [submodule "src/ros2_wheeltec_n100_imu"]
 	path = src/ros2_wheeltec_n100_imu
-	url = https://github.com/NDHANA94/ros2_wheeltec_n100_imu.git
+	url = https://github.com/ZhihaoZhang0618/ros2_wheeltec_n100_imu.git
 [submodule "FASTLIO2_ROS2"]
 	path = src/FASTLIO2_ROS2
 	url = https://github.com/liangheming/FASTLIO2_ROS2.git
