@@ -253,5 +253,6 @@ def generate_launch_description():
     ld.add_action(robot_localization_node)
     ld.add_action(static_tf_node_bl)
     ld.add_action(static_tf_node_bi)
+    ld.add_action(lio)
 
     return ld

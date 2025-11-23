@@ -12,12 +12,12 @@
     port: '/dev/ttyVESC'
     duty_cycle_min: -1.0
     duty_cycle_max: 1.0
-    current_min: -100.0
-    current_max: 100.0
+    current_min: -80.0
+    current_max: 80.0
     brake_min: -20000.0
     brake_max: 200000.0
-    speed_min: -23250.0
-    speed_max: 23250.0
+    speed_min: -33250.0
+    speed_max: 33250.0
     position_min: 0.0
     position_max: 0.0
     servo_min: 0.142

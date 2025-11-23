@@ -38,10 +38,10 @@ class CalibrationTier:
     """
     Manages current-based calibration with three speed tiers.
     
-    Each tier tests a different speed range with full current sweep (0-max):
-    - Tier 1: 0-50A @ 1.5 m/s (low speed, Coulomb friction dominant)
-    - Tier 2: 0-100A @ 3.0 m/s (mid speed, transition region)
-    - Tier 3: 0-150A @ 5.0 m/s (high speed, back-EMF significant)
+    Each tier tests a different speed range with identical current sweep (0-60A):
+    - Tier 1: 0-60A @ 1.5 m/s (low speed, Coulomb friction dominant)
+    - Tier 2: 0-60A @ 3.0 m/s (mid speed, transition region)
+    - Tier 3: 0-60A @ 5.0 m/s (high speed, back-EMF significant)
     
     Current ramps continuously on straights at specified rate (e.g., 5A/s).
     Between straights, current resets to 80% of previous straight's end value.
@@ -62,22 +62,22 @@ class CalibrationTier:
                 'name': 'TIER_1_LOW_SPEED',
                 'v_target': 1.5,
                 'current_min': 0.0,
-                'current_max': 50.0,
-                'description': 'Tier 1: 0-50A @ 1.5m/s - Coulomb friction dominant'
+                'current_max': 60.0,
+                'description': 'Tier 1: 0-60A @ 1.5m/s - Coulomb friction dominant'
             },
             {
                 'name': 'TIER_2_MID_SPEED',
                 'v_target': 3.0,
                 'current_min': 0.0,
-                'current_max': 100.0,
-                'description': 'Tier 2: 0-100A @ 3.0m/s - Transition region'
+                'current_max': 60.0,
+                'description': 'Tier 2: 0-60A @ 3.0m/s - Transition region'
             },
             {
                 'name': 'TIER_3_HIGH_SPEED',
                 'v_target': 5.0,
                 'current_min': 0.0,
-                'current_max': 150.0,
-                'description': 'Tier 3: 0-150A @ 5.0m/s - Back-EMF significant'
+                'current_max': 60.0,
+                'description': 'Tier 3: 0-60A @ 5.0m/s - Back-EMF significant'
             }
         ]
     
@@ -650,7 +650,7 @@ class CurrentAccelCalibNode(Node):
         - Straight segments: Current control, ramp at specified rate (e.g., 5A/s)
         - Curve segments: Speed control, maintain tier target speed
         - Between straights: Reset to 80% of previous straight's end current
-        - Tier selection: Automatic based on current range (0-50A, 0-100A, 0-150A)
+        - Tier selection: Automatic based on current range (identical 0-60A sweep)
         
         Args:
             current_time: Current timestamp (seconds since epoch)
@@ -713,15 +713,15 @@ class CurrentAccelCalibNode(Node):
                     self.calib_tier.current_ramp_rate * elapsed
                 )
                 
-                # Cap at maximum current (150A)
-                if self.current_calibration_current >= 150.0:
-                    self.current_calibration_current = 150.0
+                # Cap at maximum current (60A after tier harmonization)
+                if self.current_calibration_current >= 60.0:
+                    self.current_calibration_current = 60.0
                     self.calibration_complete = True
                 
                 # Determine tier name for logging
                 tier = self.calib_tier.get_tier_by_current(self.current_calibration_current)
                 if tier is None:
-                    tier_name = "TIER_3_HIGH_SPEED (>150A)"
+                    tier_name = "TIER_3_HIGH_SPEED (>60A)"
                 else:
                     tier_name = tier['name']
                 

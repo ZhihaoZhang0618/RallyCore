@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from typing import Deque, Dict, List, Optional, Sequence, Tuple
+from typing import Deque, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import rclpy
@@ -195,6 +195,7 @@ class AdaptivePurePursuit:
         path_curvature: float,
         velocity: float,
         cross_track_error: float,
+        speed_scale_params: Optional[Tuple[float, float, float]] = None,
     ) -> Tuple[float, Dict[str, float]]:
         ld = max(self.compute_lookahead(velocity), 1e-3)
         dx = lookahead_point[0] - current_pos[0]
@@ -208,12 +209,31 @@ class AdaptivePurePursuit:
         heading_error = _angle_wrap(lookahead_heading - current_yaw)
         steering += self.heading_error_gain * heading_error
         steering += self.curvature_ff_gain * path_curvature
-        steering = float(np.clip(steering, -self.max_steering, self.max_steering))
+        
+        # 应用基本转向限制
+        max_steer = self.max_steering
+        
+        # 高速转向衰减
+        speed_scale = 1.0
+        if speed_scale_params is not None:
+            start_speed, end_speed, downscale = speed_scale_params
+            speed = abs(velocity)
+            if speed >= start_speed:
+                if speed >= end_speed:
+                    speed_scale = downscale
+                else:
+                    # 线性插值
+                    alpha = (speed - start_speed) / (end_speed - start_speed)
+                    speed_scale = 1.0 - alpha * (1.0 - downscale)
+                max_steer *= speed_scale
+        
+        steering = float(np.clip(steering, -max_steer, max_steer))
         debug = {
             "lookahead": ld,
             "heading_error": heading_error,
             "curvature_term": curvature_term,
             "cross_track_error": cross_track_error,
+            "speed_scale": speed_scale,
         }
         return steering, debug
 
@@ -290,13 +310,30 @@ class PPTuningNode(Node):
         
         self.wheelbase = self.declare_parameter('wheelbase', 0.33).value
         self.max_steering = self.declare_parameter('max_steering', 0.35).value
-        self.lookahead_gain = self.declare_parameter('lookahead_gain', 1.6, lookahead_desc).value
+        self.lookahead_gain = self.declare_parameter('lookahead_gain', 1.0, lookahead_desc).value
         self.min_lookahead = self.declare_parameter('min_lookahead', 0.30, min_lookahead_desc).value
-        self.max_lookahead = self.declare_parameter('max_lookahead', 3.5, max_lookahead_desc).value
+        self.max_lookahead = self.declare_parameter('max_lookahead', 4.5, max_lookahead_desc).value
         self.lateral_error_gain = self.declare_parameter('lateral_error_gain', 1.0, lateral_desc).value
-        self.heading_error_gain = self.declare_parameter('heading_error_gain', 0.4, heading_desc).value
+        self.heading_error_gain = self.declare_parameter('heading_error_gain', 0.1, heading_desc).value
         self.curvature_ff_gain = self.declare_parameter('curvature_ff_gain', 0.1, curvature_desc).value
         self.command_frequency = self.declare_parameter('command_frequency', 50.0).value
+        
+        # 高速转向衰减参数
+        steer_scale_desc = ParameterDescriptor(
+            description='Speed at which steering scaling starts (m/s)',
+            floating_point_range=[FloatingPointRange(from_value=3.0, to_value=15.0, step=0.5)]
+        )
+        downscale_desc = ParameterDescriptor(
+            description='Downscale factor for steering at high speed (0-1)',
+            floating_point_range=[FloatingPointRange(from_value=0.5, to_value=1.0, step=0.05)]
+        )
+        end_scale_desc = ParameterDescriptor(
+            description='Speed at which max downscale is reached (m/s)',
+            floating_point_range=[FloatingPointRange(from_value=5.0, to_value=20.0, step=0.5)]
+        )
+        self.start_scale_speed = self.declare_parameter('start_scale_speed', 5.0, steer_scale_desc).value
+        self.end_scale_speed = self.declare_parameter('end_scale_speed', 7.0, end_scale_desc).value
+        self.steer_downscale_factor = self.declare_parameter('steer_downscale_factor', 0.80, downscale_desc).value
         
         # Racetrack trajectory parameters with descriptors for live tuning
         track_radius_desc = ParameterDescriptor(
@@ -305,7 +342,7 @@ class PPTuningNode(Node):
         )
         track_straight_desc = ParameterDescriptor(
             description='Length of straight sections (m)',
-            floating_point_range=[FloatingPointRange(from_value=1.0, to_value=20.0, step=0.5)]
+            floating_point_range=[FloatingPointRange(from_value=1.0, to_value=40.0, step=0.5)]
         )
         track_pts_straight_desc = ParameterDescriptor(
             description='Number of points per straight section',
@@ -316,8 +353,8 @@ class PPTuningNode(Node):
             integer_range=[IntegerRange(from_value=10, to_value=300, step=10)]
         )
         
-        self.track_radius = self.declare_parameter('track_radius', 2.0, track_radius_desc).value
-        self.track_straight_length = self.declare_parameter('track_straight_length', 6.0, track_straight_desc).value
+        self.track_radius = self.declare_parameter('track_radius', 3.0, track_radius_desc).value
+        self.track_straight_length = self.declare_parameter('track_straight_length', 20.0, track_straight_desc).value
         self.track_points_per_straight = self.declare_parameter('track_points_per_straight', 150, track_pts_straight_desc).value
         self.track_points_per_semicircle = self.declare_parameter('track_points_per_semicircle', 100, track_pts_semicircle_desc).value
         
@@ -328,7 +365,7 @@ class PPTuningNode(Node):
             description='Target speed (m/s) for trajectory tracking',
             floating_point_range=[FloatingPointRange(from_value=0.0, to_value=10.0, step=0.1)]
         )
-        self.target_speed = self.declare_parameter('target_speed', 1.0, speed_desc).value
+        self.target_speed = self.declare_parameter('target_speed', 1.5, speed_desc).value
         self.log_interval = self.declare_parameter('log_interval', 1.0).value
         self.metrics_window = int(self.declare_parameter('metrics_window', 200).value)
 
@@ -356,6 +393,9 @@ class PPTuningNode(Node):
         self.current_pos = np.array([0.0, 0.0])
         self.current_yaw = 0.0
         self.current_velocity = 0.0
+        self.trajectory_initialized = False
+        self.trajectory_offset = np.array([0.0, 0.0])
+        self.trajectory_rotation = 0.0
 
     def _setup_interfaces(self) -> None:
         qos = QoSProfile(
@@ -363,7 +403,7 @@ class PPTuningNode(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
-        self.create_subscription(Odometry, '/odom', self._odom_callback, qos)
+        self.create_subscription(Odometry, '/odometry/filtered', self._odom_callback, qos)
         self.create_subscription(Path, '/pp/reference_path', self._path_callback, qos)
         self.publisher = self.create_publisher(AckermannDriveStamped, '/drive', 10)
         self.trajectory_pub = self.create_publisher(Path, '/pp/current_trajectory', 10)
@@ -385,6 +425,8 @@ class PPTuningNode(Node):
                 self.target_speed = float(value)
             elif name == 'log_interval':
                 self.log_interval = max(float(value), 0.1)
+            elif name in ['start_scale_speed', 'end_scale_speed', 'steer_downscale_factor']:
+                setattr(self, name, float(value))
             elif name == 'track_radius':
                 self.track_radius = float(value)
                 self.figure8.regenerate(self.track_radius)
@@ -445,41 +487,91 @@ class PPTuningNode(Node):
         if self.use_external_path and self.external_traj is not None:
             return self.external_traj
         return self.figure8
+    
+    def _transform_trajectory_point(self, point: np.ndarray) -> np.ndarray:
+        """Transform trajectory point from local frame to odom frame."""
+        # Rotate by initial yaw
+        cos_yaw = np.cos(self.trajectory_rotation)
+        sin_yaw = np.sin(self.trajectory_rotation)
+        rotated = np.array([
+            cos_yaw * point[0] - sin_yaw * point[1],
+            sin_yaw * point[0] + cos_yaw * point[1]
+        ])
+        # Translate by initial position
+        return rotated + self.trajectory_offset
 
     def _control_loop(self) -> None:
         if not self._odom_ready:
             return
+        
+        # Initialize trajectory at first odometry message
+        if not self.trajectory_initialized:
+            self.trajectory_offset = self.current_pos.copy()
+            self.trajectory_rotation = self.current_yaw
+            self.trajectory_initialized = True
+            self.get_logger().info(
+                f'Trajectory initialized at pos=({self.current_pos[0]:.2f}, {self.current_pos[1]:.2f}), '
+                f'yaw={self.current_yaw:.2f}rad'
+            )
+        
         now = self.get_clock().now().nanoseconds * 1e-9
         trajectory = self._active_trajectory()
+        
+        # Transform current position to trajectory's local frame
+        dx = self.current_pos[0] - self.trajectory_offset[0]
+        dy = self.current_pos[1] - self.trajectory_offset[1]
+        cos_yaw = np.cos(-self.trajectory_rotation)
+        sin_yaw = np.sin(-self.trajectory_rotation)
+        local_pos = np.array([
+            cos_yaw * dx - sin_yaw * dy,
+            sin_yaw * dx + cos_yaw * dy
+        ])
+        
         closest, self._trajectory_idx, _ = trajectory.closest_point(
-            self.current_pos, self._trajectory_idx
+            local_pos, self._trajectory_idx
         )
         heading_at_closest = trajectory.heading(self._trajectory_idx)
-        dx = self.current_pos[0] - closest[0]
-        dy = self.current_pos[1] - closest[1]
-        cross_track = -math.sin(heading_at_closest) * dx + math.cos(heading_at_closest) * dy
+        dx_local = local_pos[0] - closest[0]
+        dy_local = local_pos[1] - closest[1]
+        cross_track = -math.sin(heading_at_closest) * dx_local + math.cos(heading_at_closest) * dy_local
+        
         lookahead_distance = self.controller.compute_lookahead(self.current_velocity)
-        lookahead_point, lookahead_idx = trajectory.lookahead_point(
+        lookahead_point_local, lookahead_idx = trajectory.lookahead_point(
             self._trajectory_idx, lookahead_distance
         )
-        lookahead_heading = trajectory.heading(lookahead_idx)
+        lookahead_heading_local = trajectory.heading(lookahead_idx)
         path_curvature = trajectory.curvature(lookahead_idx)
+        
+        # Transform lookahead point to odom frame for visualization
+        lookahead_point_odom = self._transform_trajectory_point(lookahead_point_local)
+        
+        # Transform lookahead heading to odom frame
+        lookahead_heading = lookahead_heading_local + self.trajectory_rotation
+        
+        # Prepare speed scale parameters for high-speed steering limit
+        speed_scale_params = (
+            self.start_scale_speed,
+            self.end_scale_speed,
+            self.steer_downscale_factor
+        )
+        
         steering_cmd, debug = self.controller.compute(
             self.current_pos,
             self.current_yaw,
-            lookahead_point,
+            lookahead_point_odom,
             lookahead_heading,
             path_curvature,
             self.current_velocity,
             cross_track,
+            speed_scale_params=speed_scale_params,
         )
         
         # Publish lookahead point for visualization
         lookahead_msg = PointStamped()
         lookahead_msg.header.stamp = self.get_clock().now().to_msg()
         lookahead_msg.header.frame_id = 'odom'
-        lookahead_msg.point.x = float(lookahead_point[0])
-        lookahead_msg.point.y = float(lookahead_point[1])
+        lookahead_msg.point.x = float(lookahead_point_odom[0])
+        lookahead_msg.point.y = float(lookahead_point_odom[1])
         lookahead_msg.point.z = 0.0
         self.lookahead_pub.publish(lookahead_msg)
         
@@ -494,24 +586,30 @@ class PPTuningNode(Node):
 
         if now - self._last_log_time > self.log_interval:
             self._last_log_time = now
+            speed_scale_info = f"scale={debug.get('speed_scale', 1.0):.2f}" if abs(self.current_velocity) > self.start_scale_speed else ""
             self.get_logger().info(
                 f"v={self.current_velocity:.2f}m/s -> target={self.target_speed:.2f} | "
-                f"δ={steering_cmd:.3f}rad | ld={debug['lookahead']:.2f}m | "
+                f"δ={steering_cmd:.3f}rad {speed_scale_info} | ld={debug['lookahead']:.2f}m | "
                 f"cte={cross_track:.3f}m | {self.metrics.summary()}"
             )
 
     def _publish_trajectory(self) -> None:
         """Publish the current active trajectory as a Path message for visualization."""
+        if not self.trajectory_initialized:
+            return
+            
         trajectory = self._active_trajectory()
         path_msg = Path()
         path_msg.header.stamp = self.get_clock().now().to_msg()
         path_msg.header.frame_id = 'odom'
         
         for point in trajectory.points:
+            # Transform each point from local frame to odom frame
+            transformed_point = self._transform_trajectory_point(point)
             pose = PoseStamped()
             pose.header = path_msg.header
-            pose.pose.position.x = float(point[0])
-            pose.pose.position.y = float(point[1])
+            pose.pose.position.x = float(transformed_point[0])
+            pose.pose.position.y = float(transformed_point[1])
             pose.pose.position.z = 0.0
             pose.pose.orientation.w = 1.0
             path_msg.poses.append(pose)

@@ -26,7 +26,7 @@ class JoystickControl(Node):
         )
 
         self.speed_limit = self.declare_parameter("speed_limit", 3.0).value
-        self.speed_reverse = self.declare_parameter("speed_reverse", False).value
+        self.speed_reverse = self.declare_parameter("speed_reverse", True).value
         self.speed_channel = self.declare_parameter("speed_channel", 3).value # channel x is x, don't worry
         self.steering_channel = self.declare_parameter("steering_channel", 4).value
         self.speed_channel8_enabled = self.declare_parameter("speed_channel8_enabled", True).value
