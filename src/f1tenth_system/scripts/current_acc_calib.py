@@ -19,6 +19,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from ackermann_msgs.msg import AckermannDriveStamped
+from geometry_msgs.msg import PointStamped
 from nav_msgs.msg import Odometry
 from vesc_msgs.msg import VescStateStamped
 import numpy as np
@@ -35,86 +36,67 @@ def _angle_wrap(angle: float) -> float:
 
 class CalibrationTier:
     """
-    Manages speed-tiered calibration stages.
+    Manages current-based calibration with three speed tiers.
     
-    Different speed ranges reveal different motor characteristics:
-    - Low speed: Coulomb friction dominant
-    - Mid speed: Transition region
-    - High speed: Back-EMF effects become significant
+    Each tier tests a different speed range with full current sweep (0-max):
+    - Tier 1: 0-50A @ 1.5 m/s (low speed, Coulomb friction dominant)
+    - Tier 2: 0-100A @ 3.0 m/s (mid speed, transition region)
+    - Tier 3: 0-150A @ 5.0 m/s (high speed, back-EMF significant)
+    
+    Current ramps continuously on straights at specified rate (e.g., 5A/s).
+    Between straights, current resets to 80% of previous straight's end value.
     """
     
-    def __init__(self):
-        """Initialize speed tiers"""
-        # Format: (name, v_target, start_time, end_time, current_range)
+    def __init__(self, current_ramp_rate: float = 5.0):
+        """
+        Initialize calibration tiers.
+        
+        Args:
+            current_ramp_rate: Current increase rate on straights (A/s), default 5.0
+        """
+        self.current_ramp_rate = current_ramp_rate
+        
+        # Three calibration tiers with different current and speed ranges
         self.tiers = [
             {
-                'name': 'LOW_SPEED',
+                'name': 'TIER_1_LOW_SPEED',
                 'v_target': 1.5,
-                'time_start': 0,
-                'time_end': 40,
                 'current_min': 0.0,
-                'current_max': 150.0,
-                'description': 'Low speed tier (1.5 m/s) - Coulomb friction dominant'
+                'current_max': 50.0,
+                'description': 'Tier 1: 0-50A @ 1.5m/s - Coulomb friction dominant'
             },
             {
-                'name': 'MID_SPEED',
+                'name': 'TIER_2_MID_SPEED',
                 'v_target': 3.0,
-                'time_start': 40,
-                'time_end': 80,
                 'current_min': 0.0,
-                'current_max': 150.0,
-                'description': 'Mid speed tier (3.0 m/s) - Transition region'
+                'current_max': 100.0,
+                'description': 'Tier 2: 0-100A @ 3.0m/s - Transition region'
             },
             {
-                'name': 'HIGH_SPEED',
+                'name': 'TIER_3_HIGH_SPEED',
                 'v_target': 5.0,
-                'time_start': 80,
-                'time_end': 120,
                 'current_min': 0.0,
                 'current_max': 150.0,
-                'description': 'High speed tier (5.0 m/s) - Back-EMF significant'
+                'description': 'Tier 3: 0-150A @ 5.0m/s - Back-EMF significant'
             }
         ]
     
-    def get_current_tier(self, elapsed_time: float) -> dict:
+    def get_tier_by_current(self, current_A: float) -> dict:
         """
-        Get calibration tier for given elapsed time.
+        Determine which tier current falls into.
         
         Args:
-            elapsed_time: Seconds elapsed since calibration start
+            current_A: Current value (A)
             
         Returns:
-            Tier dictionary or None if calibration complete
+            Tier dictionary or None if beyond all tiers
         """
         for tier in self.tiers:
-            if tier['time_start'] <= elapsed_time < tier['time_end']:
+            if tier['current_min'] <= current_A <= tier['current_max']:
                 return tier
+        
+        # Beyond all tiers - calibration complete
         return None
-    
-    def get_target_current(self, elapsed_time: float) -> float:
-        """
-        Compute target current as function of elapsed time within tier.
-        
-        Ramps current from min to max over the tier duration.
-        
-        Args:
-            elapsed_time: Seconds elapsed since calibration start
-            
-        Returns:
-            Target current (A) or 0.0 if calibration complete
-        """
-        tier = self.get_current_tier(elapsed_time)
-        if tier is None:
-            return 0.0
-        
-        # Linear ramp within tier
-        tier_duration = tier['time_end'] - tier['time_start']
-        tier_elapsed = elapsed_time - tier['time_start']
-        progress = tier_elapsed / tier_duration
-        
-        # Interpolate current from min to max
-        current = tier['current_min'] + progress * (tier['current_max'] - tier['current_min'])
-        return current
 
 
 class BrakingCalibrationMode:
@@ -556,6 +538,11 @@ class CurrentAccelCalibNode(Node):
             '/calib/ackermann_cmd',
             10
         )
+        self.lookahead_pub = self.create_publisher(
+            PointStamped,
+            '/calib/lookahead_point',
+            10
+        )
         
         # Internal state
         self.current_pos = np.array([0.0, 0.0])
@@ -570,7 +557,17 @@ class CurrentAccelCalibNode(Node):
         if self.calibration_mode == 'braking':
             self.calib_tier = BrakingCalibrationMode()
         else:
-            self.calib_tier = CalibrationTier()
+            # Acceleration calibration with configurable ramp rate
+            current_ramp_rate = self.declare_parameter('current_ramp_rate', 5.0).value  # A/s
+            self.calib_tier = CalibrationTier(current_ramp_rate=current_ramp_rate)
+        
+        # Current ramping state variables (for acceleration mode)
+        self.current_segment_type = None  # 'straight' or 'curve', None = not started
+        self.segment_start_time = None    # Timestamp when current segment started
+        self.segment_start_current = 0.0  # Current value at start of current straight
+        self.last_straight_end_current = 0.0  # End current of previous straight
+        self.current_calibration_current = 0.0  # Current commanded value
+        self.calibration_complete = False  # Flag when reached max current
         
         # Trajectory and controller
         self.trajectory = Figure8Trajectory(
@@ -644,47 +641,111 @@ class CurrentAccelCalibNode(Node):
         )
         return yaw
     
-    def get_current_stage(self, elapsed_time: float) -> tuple:
+    def get_current_stage(self, current_time: float) -> tuple:
         """
-        Get current calibration stage with dynamic current ramping based on speed tier.
-        Supports both acceleration and braking modes.
+        Get current calibration stage with segment-aware current ramping.
+        Supports both acceleration (current ramp) and braking (fixed stages) modes.
+        
+        Acceleration mode logic:
+        - Straight segments: Current control, ramp at specified rate (e.g., 5A/s)
+        - Curve segments: Speed control, maintain tier target speed
+        - Between straights: Reset to 80% of previous straight's end current
+        - Tier selection: Automatic based on current range (0-50A, 0-100A, 0-150A)
         
         Args:
-            elapsed_time: Time elapsed since calibration start (seconds)
+            current_time: Current timestamp (seconds since epoch)
             
         Returns:
-            tuple: (tier_name, current_value_A, is_complete, jerk_mode)
+            tuple: (tier_name, current_value_A, is_complete, jerk_mode, target_speed)
                    jerk_mode: 0.0=speed control (curves), 2.0=current control (straights)
+                   target_speed: Target speed for curves (m/s), 0.0 for straights
         """
         if isinstance(self.calib_tier, BrakingCalibrationMode):
-            # Braking mode: four stages with negative current
-            # Use stages defined in BrakingCalibrationMode.__init__ (single source of truth)
+            # Braking mode: time-based stages with fixed negative current
+            if self.segment_start_time is None:
+                self.segment_start_time = current_time
+            
+            elapsed_time = current_time - self.segment_start_time
+            
             for stage in self.calib_tier.stages:
                 if stage['time_start'] <= elapsed_time < stage['time_end']:
-                    return stage['name'], stage['current'], False, 2.0  # Current control mode
+                    return stage['name'], stage['current'], False, 2.0, 0.0
             
-            return "BRAKING_COMPLETE", 0.0, True, 0.0
+            return "BRAKING_COMPLETE", 0.0, True, 0.0, 0.0
         
         else:
-            # Acceleration mode: three speed tiers with dynamic current ramping
-            # Use tiers defined in CalibrationTier.__init__ (single source of truth)
-            for tier in self.calib_tier.tiers:
-                if tier['time_start'] <= elapsed_time < tier['time_end']:
-                    # Compute progress within this tier
-                    tier_duration = tier['time_end'] - tier['time_start']
-                    tier_elapsed = elapsed_time - tier['time_start']
-                    progress = tier_elapsed / tier_duration
-                    
-                    # Interpolate current from min to max
-                    current_A = tier['current_min'] + progress * (tier['current_max'] - tier['current_min'])
-                    
-                    # Determine control mode based on trajectory position (curve vs straight)
-                    jerk_mode = 2.0 if self.trajectory.is_in_curve(self.trajectory_idx) else 0.0
-                    
-                    return f"{tier['name']} (target {tier['v_target']}m/s)", current_A, False, jerk_mode
+            # Acceleration mode: continuous current ramping with segment switching
             
-            # Calibration complete
-            return "ACCELERATION_COMPLETE", 0.0, True, 0.0
+            # Check if calibration already complete
+            if self.calibration_complete:
+                return "ACCELERATION_COMPLETE", 0.0, True, 0.0, 0.0
+            
+            # Determine if currently in curve or straight
+            is_in_curve = self.trajectory.is_in_curve(self.trajectory_idx)
+            
+            # Initialize on first call
+            if self.current_segment_type is None:
+                self.current_segment_type = 'curve' if is_in_curve else 'straight'
+                self.segment_start_time = current_time
+                self.segment_start_current = 0.0
+                self.last_straight_end_current = 0.0
+            
+            # Detect segment transitions
+            if is_in_curve and self.current_segment_type == 'straight':
+                # Transition: straight → curve
+                self.last_straight_end_current = self.current_calibration_current
+                self.current_segment_type = 'curve'
+                self.segment_start_time = current_time
+                
+            elif not is_in_curve and self.current_segment_type == 'curve':
+                # Transition: curve → straight
+                self.current_segment_type = 'straight'
+                self.segment_start_time = current_time
+                # Start new straight at 80% of previous straight's end current
+                self.segment_start_current = self.last_straight_end_current * 0.8
+            
+            # Compute current value and control mode
+            if self.current_segment_type == 'straight':
+                # Straight segment: ramp current at specified rate
+                elapsed = current_time - self.segment_start_time
+                self.current_calibration_current = (
+                    self.segment_start_current + 
+                    self.calib_tier.current_ramp_rate * elapsed
+                )
+                
+                # Cap at maximum current (150A)
+                if self.current_calibration_current >= 150.0:
+                    self.current_calibration_current = 150.0
+                    self.calibration_complete = True
+                
+                # Determine tier name for logging
+                tier = self.calib_tier.get_tier_by_current(self.current_calibration_current)
+                if tier is None:
+                    tier_name = "TIER_3_HIGH_SPEED (>150A)"
+                else:
+                    tier_name = tier['name']
+                
+                # Current control mode on straights (target_speed=0.0 means not used)
+                jerk_mode = 2.0
+                return tier_name, self.current_calibration_current, False, jerk_mode, 0.0
+            
+            else:
+                # Curve segment: maintain target speed
+                # Determine tier based on last commanded current from previous straight
+                tier = self.calib_tier.get_tier_by_current(self.current_calibration_current)
+                
+                # Defensive check: if current exceeds all tier ranges (shouldn't happen in normal operation)
+                # Default to high-speed tier for safety
+                if tier is None:
+                    tier_name = "TIER_3_HIGH_SPEED (curve)"
+                    target_speed = 5.0
+                else:
+                    tier_name = f"{tier['name']} (curve)"
+                    target_speed = tier['v_target']
+                
+                # Speed control mode on curves
+                jerk_mode = 0.0
+                return tier_name, 0.0, False, jerk_mode, target_speed
     
     def control_loop_callback(self):
         """
@@ -701,10 +762,11 @@ class CurrentAccelCalibNode(Node):
             self.start_time = time.time()
             self.get_logger().info("Calibration started!")
         
-        elapsed_time = time.time() - self.start_time
+        current_time = time.time()
+        elapsed_time = current_time - self.start_time
         
-        # Get current stage with multi-tier physics-based control
-        stage_name, current_A, is_complete, jerk_mode = self.get_current_stage(elapsed_time)
+        # Get current stage with segment-aware current ramping
+        stage_name, current_A, is_complete, jerk_mode, target_speed = self.get_current_stage(current_time)
         
         # Create command message
         cmd_msg = AckermannDriveStamped()
@@ -743,28 +805,36 @@ class CurrentAccelCalibNode(Node):
                 self.current_velocity
             )
             
-            # Determine control mode based on trajectory position (curve vs. straight)
+            # Publish lookahead point for visualization
+            lookahead_msg = PointStamped()
+            lookahead_msg.header.stamp = self.get_clock().now().to_msg()
+            lookahead_msg.header.frame_id = 'odom'
+            lookahead_msg.point.x = float(lookahead_point[0])
+            lookahead_msg.point.y = float(lookahead_point[1])
+            lookahead_msg.point.z = 0.0
+            self.lookahead_pub.publish(lookahead_msg)
+            
+            
+            # Set control mode based on trajectory segment
             if jerk_mode == 2.0:
                 # Current control mode (straights) - direct current command
                 cmd_msg.drive.acceleration = current_A
-                mode_str = "CURRENT_CONTROL"
+                mode_str = f"CURRENT_CTRL ({current_A:.1f}A)"
             else:
-                # Speed/hybrid control mode (curves) - maintain target speed
-                tier_idx = min(int(elapsed_time / 40.0), 2)
-                target_speed = self.calib_tier.tiers[tier_idx]['v_target']
-                cmd_msg.drive.target_speed = target_speed
-                mode_str = "SPEED_CONTROL"
+                # Speed control mode (curves) - maintain target speed
+                cmd_msg.drive.speed = target_speed
+                mode_str = f"SPEED_CTRL ({target_speed:.1f}m/s)"
             
             cmd_msg.drive.steering_angle = steering_angle
             cmd_msg.drive.jerk = jerk_mode  # Mode flag: 0=speed, 1=accel, 2=current, 3=duty
             
-            # Periodic logging (every 2 seconds)
-            if int(elapsed_time * 2) % 4 == 0:
+            # Periodic logging (every 1 second)
+            if int(elapsed_time * 2) % 2 == 0:
+                segment_type = "STRAIGHT" if jerk_mode == 2.0 else "CURVE"
                 self.get_logger().info(
-                    f"[{stage_name}] t={elapsed_time:.1f}s | "
+                    f"[{stage_name}] t={elapsed_time:.1f}s | {segment_type} | "
                     f"I={current_A:.1f}A | v={self.current_velocity:.2f}m/s | "
-                    f"δ={steering_angle:.3f}rad | ld={debug_info['lookahead_distance']:.2f}m | "
-                    f"cte={cross_track_error:.2f}m | h_err={debug_info['heading_error']:.3f}rad | {mode_str}"
+                    f"δ={steering_angle:.3f}rad | cte={cross_track_error:.2f}m | {mode_str}"
                 )
         
         # Publish command

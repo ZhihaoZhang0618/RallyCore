@@ -34,7 +34,7 @@ from typing import Deque, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PointStamped
 from nav_msgs.msg import Odometry, Path
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
@@ -329,6 +329,7 @@ class PPTuningNode(Node):
         self.create_subscription(Path, '/pp/reference_path', self._path_callback, qos)
         self.publisher = self.create_publisher(AckermannDriveStamped, '/drive', 10)
         self.trajectory_pub = self.create_publisher(Path, '/pp/current_trajectory', 10)
+        self.lookahead_pub = self.create_publisher(PointStamped, '/pp/lookahead_point', 10)
         self.create_timer(1.0 / max(self.command_frequency, 1.0), self._control_loop)
         self.create_timer(5.0, self._publish_trajectory)  # Publish trajectory every 5 seconds
 
@@ -434,6 +435,16 @@ class PPTuningNode(Node):
             self.current_velocity,
             cross_track,
         )
+        
+        # Publish lookahead point for visualization
+        lookahead_msg = PointStamped()
+        lookahead_msg.header.stamp = self.get_clock().now().to_msg()
+        lookahead_msg.header.frame_id = 'odom'
+        lookahead_msg.point.x = float(lookahead_point[0])
+        lookahead_msg.point.y = float(lookahead_point[1])
+        lookahead_msg.point.z = 0.0
+        self.lookahead_pub.publish(lookahead_msg)
+        
         self.metrics.update(cross_track, debug['heading_error'], steering_cmd)
         
         cmd = AckermannDriveStamped()
