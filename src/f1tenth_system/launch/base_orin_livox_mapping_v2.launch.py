@@ -40,11 +40,11 @@ def generate_launch_description():
         default_value=vesc_config,
         description='Descriptions for vesc configs')
 
-    # Declare config paths for LIO and PGO
+    # Declare config paths for LIO and Localizer
     lio_config = os.path.join(
         get_package_share_directory('f1tenth_system'),
         'params',
-        'lio.yaml'
+        'fastlio.yaml'
     )
     
     pgo_config = os.path.join(

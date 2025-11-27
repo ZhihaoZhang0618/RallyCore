@@ -166,7 +166,7 @@ def generate_launch_description():
     )
     
     
-    lio_config_path = os.path.join(get_package_share_directory("f1tenth_system"), 'params', 'lio.yaml')
+    lio_config_path = os.path.join(get_package_share_directory("f1tenth_system"), 'params', 'fastlio.yaml')
     pgo_config_path = os.path.join(get_package_share_directory("f1tenth_system"), 'params', 'pgo.yaml')
 
     lio=Node(

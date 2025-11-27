@@ -1,0 +1,15 @@
+cloud_topic: /cloud_registered_body
+odom_topic: /aft_mapped_to_init
+map_frame: map
+local_frame: odom
+update_hz: 1.0
+
+rough_scan_resolution: 0.25
+rough_map_resolution: 0.25
+rough_max_iteration: 5
+rough_score_thresh: 0.2
+
+refine_scan_resolution: 0.1
+refine_map_resolution: 0.1
+refine_max_iteration: 10
+refine_score_thresh: 0.1

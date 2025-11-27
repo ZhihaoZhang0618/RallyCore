@@ -58,13 +58,13 @@ def generate_launch_description():
     lio_config = os.path.join(
         get_package_share_directory('f1tenth_system'),
         'params',
-        'lio.yaml'
+        'fastlio.yaml'
     )
     
     localizer_config = os.path.join(
         get_package_share_directory('f1tenth_system'),
         'params',
-        'localizer.yaml'
+        'fastlio_localizer.yaml'
     )
 
     lio_la = DeclareLaunchArgument(
