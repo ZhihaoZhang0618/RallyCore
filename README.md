@@ -42,7 +42,10 @@ The modified VESC interface is based on the VESC interface provided by Veddar VE
 
 ### ⚡ Quick Start (Recommended)
 ```bash
-# 🔌 Hardware bringup (V2 - integrated control)
+# 🔌 Hardware bringup (V3 - Point-LIO, Latest)
+ros2 launch f1tenth_system base_orin_livox_bringup_v3.launch.py
+
+# Alternative: V2 - FAST-LIO2 with EKF fusion
 ros2 launch f1tenth_system base_orin_livox_bringup_v2.launch.py
 
 # 🗺️ SLAM/Localization
@@ -53,12 +56,14 @@ ros2 launch f1tenth_system nav.launch.py
 ```
 
 ### 🏗️ Hardware Bringup Versions
-| Version | Launch File | Features |
-|---------|-------------|----------|
-| **✨ V2 (Recommended)** | `base_orin_livox_bringup_v2.launch.py` | 🎯 Integrated control (joystick_v2) • 🔋 Speed/current/duty modes • 🎨 Simplified architecture |
-| 📦 V1 (Legacy) | `base_orin_livox_bringup.launch.py` | 🔀 Separate mux node • 🏛️ Traditional architecture |
+| Version | Launch File | LIO Backend | Features |
+|---------|-------------|-------------|----------|
+| **🚀 V3 (Latest)** | `base_orin_livox_bringup_v3.launch.py` | **Point-LIO** | 🎯 Point-LIO odometry • 🚫 No EKF fusion • 📦 Standard PointCloud2 |
+| **✨ V2** | `base_orin_livox_bringup_v2.launch.py` | **FAST-LIO2** | 🎯 Integrated control (joystick_v2) • 🔋 Speed/current/duty modes • 🤖 EKF fusion |
+| 📦 V1 (Legacy) | `base_orin_livox_bringup.launch.py` | **FAST-LIO2** | 🔀 Separate mux node • 🏛️ Traditional architecture • 🤖 EKF fusion |
 
-**🎉 V2 Advantages:** Single control node • Built-in arbitration • Current control support • Easier debugging
+**🎉 V3 Advantages:** Point-LIO robustness • Simplified sensor fusion • Better degeneracy handling
+**⚙️ V2 Advantages:** Single control node • Built-in arbitration • Current control support • Easier debugging
 
 📚 **Architecture details:** See `src/f1tenth_system/scripts/readme/` for V1 vs V2 comparison
 
@@ -277,7 +282,8 @@ This project would not be possible without the use of multiple great open-source
 - 📡 [ros2_crsf_receiver](https://github.com/AndreyTulyakov/ros2_crsf_receiver.git)
 - 🔀 [ackermann_mux](https://github.com/z1047941150/ackermann_mux.git)
 - ⚡ [Veddar VESC Interface](https://github.com/f1tenth/vesc)
-- 🗺️ [FASTLIO2_ROS2](https://github.com/liangheming/FASTLIO2_ROS2.git)
+- 🗺️ [FAST-LIO2_ROS2](https://github.com/liangheming/FASTLIO2_ROS2.git)
+- 🎯 [Point-LIO_ROS2](https://github.com/dfloreaa/point_lio_ros2.git)
 
 ##### 🏛️ Hardware and basic software were developed at FAST Lab, Zhejiang University.
 ##### 🎓 Currently pursuing MPhil at PolyU AIMS Lab, with ongoing development in progress.
@@ -287,9 +293,10 @@ This project would not be possible without the use of multiple great open-source
 ## 🚀 Future Work
 - 🌄 Add terrain traversability or elevation estimation module
 - 🛣️ Add flexible path planning module
-- ⚡ Add current&acceleration calibration and control module
+- ✅ ~~Add current&acceleration calibration and control module~~ (Completed ✨)
 - 🎮 Use a better simulation environment, like ISAAC Lab, Autodrive
 - 🤖 Use RL to learn end-to-end policies
+- 🗺️ Integrate additional LIO backends (LVI-SAM, DLIO, etc.)
 
 
 
