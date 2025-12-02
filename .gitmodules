@@ -12,4 +12,5 @@
 	url = https://github.com/liangheming/FASTLIO2_ROS2.git
 [submodule "src/point_lio_ros2"]
 	path = src/point_lio_ros2
-	url = https://github.com/dfloreaa/point_lio_ros2.git
+	url = https://github.com/ZhihaoZhang0618/point_lio_ros2.git
+	branch = fix-livox-custommsg

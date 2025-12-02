@@ -76,8 +76,8 @@ def generate_launch_description():
     )
 
     ################### Livox LiDAR Configuration ###################
-    # Point-LIO 要求使用标准 PointCloud2 格式，必须设置 xfer_format = 0
-    xfer_format   = 0    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
+    # Point-LIO 使用 Livox CustomMsg 格式，必须设置 xfer_format = 1
+    xfer_format   = 1    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
     multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
     data_src      = 0    # 0-lidar, others-Invalid data src
     publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
