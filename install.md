@@ -86,6 +86,8 @@ git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-m
 # Edit ~/.zshrc and add:
 # plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
 # setopt no_nomatch
+# eval "$(register-python-argcomplete3 ros2)"
+# eval "$(register-python-argcomplete3 colcon)"
 ```
 
 ---
