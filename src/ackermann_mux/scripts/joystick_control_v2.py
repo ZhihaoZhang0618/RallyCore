@@ -50,7 +50,7 @@ class JoystickControl(Node):
         self.steering_limit = self.declare_parameter("steering_limit", 0.40).value
         self.steering_reverse = self.declare_parameter("steering_reverse", True).value
         self.channel_mid = self.declare_parameter(
-            "steering_channel_mid", 984
+            "steering_channel_mid", 975
         ).value  # depand by servo channel, servo didn't have deadzone
         self.channel_deadzone = self.declare_parameter(
             "channel_deadzone", 100
@@ -152,8 +152,8 @@ class JoystickControl(Node):
             self.get_logger().info("Locked changed: %s -> %s" % (self.last_locked, self.locked))
             self.last_locked = self.locked
             
-        if self.calib_mode and self.esc_control_mode != "current":
-            self.get_logger().warn("Calibration model now & Please use current mode & Make sure everything is ready")
+        # Calibration mode is routed by upstream /calib/ackermann_cmd.drive.jerk.
+        # Do not rely on esc_control_mode during calibration; keep RC mode switching lightweight.
 
 
     def ackermann_callback(self, msg):
@@ -243,8 +243,8 @@ class JoystickControl(Node):
     
         raw_steering = self.channel[self.steering_channel]
                 
-        if abs(raw_steering - self.channel_mid) <= self.channel_deadzone*0.2:
-            return 0.0
+        # if abs(raw_steering - self.channel_mid) <= self.channel_deadzone*0.2:
+        #     return 0.0
         
         # Normalize steering value to -1 to 1
         if raw_steering > self.channel_mid:
@@ -349,14 +349,44 @@ class JoystickControl(Node):
                 rclpy.shutdown()
             return
             
-        if self.calib_mode and self.esc_control_mode != "current" and not rc_timeout:
-            self.publish_ackermann_none()
-            return
-        elif self.calib_mode and self.esc_control_mode == "current" and not rc_timeout:
-            if self.calib_ackermann_msg != None:
-                self.publish_ackermann_current(self.calib_ackermann_msg.drive.steering_angle, self.calib_ackermann_msg.drive.speed)
-            elif self.calib_ackermann_msg == None:
+        if self.calib_mode and not rc_timeout:
+            # Calibration passthrough from /calib/ackermann_cmd.
+            # Mode is encoded in drive.jerk (consistent with vesc_ackermann):
+            # 0.0=speed, 2.0=current, 3.0=duty, 1.0=accel (optional).
+            if self.calib_ackermann_msg is None:
                 self.get_logger().warn("No calibration message")
+                self.publish_ackermann_none()
+                return
+
+            jerk = float(self.calib_ackermann_msg.drive.jerk)
+            steer = float(self.calib_ackermann_msg.drive.steering_angle)
+
+            if jerk == 0.0:
+                # Speed mode
+                self.publish_ackermann(steer, float(self.calib_ackermann_msg.drive.speed))
+                return
+
+            if jerk == 2.0:
+                # Current mode: current is carried in drive.acceleration
+                self.publish_ackermann_current(steer, float(self.calib_ackermann_msg.drive.acceleration))
+                return
+
+            if jerk == 3.0:
+                # Duty mode: duty is carried in drive.acceleration
+                self.publish_ackermann_duty(steer, float(self.calib_ackermann_msg.drive.acceleration))
+                return
+
+            if jerk == 1.0:
+                # Accel feedforward mode (only if downstream supports it)
+                self.publish_ackermann_acceleration(
+                    steer,
+                    float(self.calib_ackermann_msg.drive.speed),
+                    float(self.calib_ackermann_msg.drive.acceleration),
+                )
+                return
+
+            self.get_logger().warn(f"Unknown calib jerk={jerk:.2f}; stopping")
+            self.publish_ackermann_none()
             return
         
         if self.esc_control_mode == "speed":

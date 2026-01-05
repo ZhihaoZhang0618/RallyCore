@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Dedicated Pure Pursuit parameter tuning node.
 
 Goal: adjust PP parameters so the vehicle hugs the trajectory at any speed without
@@ -368,6 +368,23 @@ class PPTuningNode(Node):
         self.target_speed = self.declare_parameter('target_speed', 1.5, speed_desc).value
         self.log_interval = self.declare_parameter('log_interval', 1.0).value
         self.metrics_window = int(self.declare_parameter('metrics_window', 200).value)
+        
+        # Trajectory offset parameters for manual tuning
+        traj_offset_x_desc = ParameterDescriptor(
+            description='Trajectory X offset (m) - can be adjusted live',
+            floating_point_range=[FloatingPointRange(from_value=-10.0, to_value=10.0, step=0.05)]
+        )
+        traj_offset_y_desc = ParameterDescriptor(
+            description='Trajectory Y offset (m) - can be adjusted live',
+            floating_point_range=[FloatingPointRange(from_value=-10.0, to_value=10.0, step=0.05)]
+        )
+        traj_offset_yaw_desc = ParameterDescriptor(
+            description='Trajectory YAW offset (rad) - can be adjusted live',
+            floating_point_range=[FloatingPointRange(from_value=-3.14, to_value=3.14, step=0.01)]
+        )
+        self.traj_offset_x = self.declare_parameter('traj_offset_x', 0.0, traj_offset_x_desc).value
+        self.traj_offset_y = self.declare_parameter('traj_offset_y', 0.0, traj_offset_y_desc).value
+        self.traj_offset_yaw = self.declare_parameter('traj_offset_yaw', 0.0, traj_offset_yaw_desc).value
 
         self.add_on_set_parameters_callback(self._on_parameter_change)
 
@@ -394,8 +411,9 @@ class PPTuningNode(Node):
         self.current_yaw = 0.0
         self.current_velocity = 0.0
         self.trajectory_initialized = False
-        self.trajectory_offset = np.array([0.0, 0.0])
-        self.trajectory_rotation = 0.0
+        # Initialize offset from parameters
+        self.trajectory_offset = np.array([self.traj_offset_x, self.traj_offset_y])
+        self.trajectory_rotation = self.traj_offset_yaw
 
     def _setup_interfaces(self) -> None:
         qos = QoSProfile(
@@ -450,6 +468,15 @@ class PPTuningNode(Node):
                 self.metrics = TrackingMetrics(window=self.metrics_window)
             elif name == 'use_external_path':
                 self.use_external_path = bool(value)
+            elif name == 'traj_offset_x':
+                self.traj_offset_x = float(value)
+                self.trajectory_offset[0] = self.traj_offset_x
+            elif name == 'traj_offset_y':
+                self.traj_offset_y = float(value)
+                self.trajectory_offset[1] = self.traj_offset_y
+            elif name == 'traj_offset_yaw':
+                self.traj_offset_yaw = float(value)
+                self.trajectory_rotation = self.traj_offset_yaw
 
         if controller_updates:
             self.controller.update(**controller_updates)
@@ -504,15 +531,20 @@ class PPTuningNode(Node):
         if not self._odom_ready:
             return
         
-        # Initialize trajectory at first odometry message
+        # Initialize trajectory at first odometry message (add user offset on top)
         if not self.trajectory_initialized:
-            self.trajectory_offset = self.current_pos.copy()
-            self.trajectory_rotation = self.current_yaw
+            self.trajectory_offset = np.array([self.traj_offset_x, self.traj_offset_y])
+            self.trajectory_rotation = self.traj_offset_yaw
             self.trajectory_initialized = True
             self.get_logger().info(
                 f'Trajectory initialized at pos=({self.current_pos[0]:.2f}, {self.current_pos[1]:.2f}), '
-                f'yaw={self.current_yaw:.2f}rad'
+                f'yaw={self.current_yaw:.2f}rad with offset=({self.trajectory_offset[0]:.2f}, {self.trajectory_offset[1]:.2f}), '
+                f'yaw_offset={self.trajectory_rotation:.2f}rad'
             )
+        else:
+            # Update offset from current parameters on every cycle (enables live tuning)
+            self.trajectory_offset = np.array([self.traj_offset_x, self.traj_offset_y])
+            self.trajectory_rotation = self.traj_offset_yaw
         
         now = self.get_clock().now().nanoseconds * 1e-9
         trajectory = self._active_trajectory()
@@ -626,7 +658,11 @@ def main(args: Optional[List[str]] = None) -> None:
         node.get_logger().info('Shutting down PP tuner...')
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # When the process is interrupted/killed, shutdown might already be called.
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

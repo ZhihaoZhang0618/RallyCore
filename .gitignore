@@ -5,3 +5,6 @@ log/
 .vscode/
 *.db3
 bag/
+.venv/
+__pycache__/
+*.pyc

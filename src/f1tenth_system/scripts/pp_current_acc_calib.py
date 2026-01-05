@@ -18,6 +18,7 @@ Output: AckermannDriveStamped messages with:
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from rclpy.parameter import Parameter
 from ackermann_msgs.msg import AckermannDriveStamped
 from geometry_msgs.msg import PointStamped
 from nav_msgs.msg import Odometry
@@ -26,6 +27,7 @@ import numpy as np
 from enum import Enum
 import math
 import time
+from rcl_interfaces.msg import SetParametersResult, ParameterDescriptor, FloatingPointRange
 
 
 def _angle_wrap(angle: float) -> float:
@@ -508,6 +510,31 @@ class CurrentAccelCalibNode(Node):
         self.command_frequency = self.declare_parameter('command_frequency', 50).value  # Hz
         self.calibration_mode = self.declare_parameter('calibration_mode', 'acceleration').value  # 'acceleration' or 'braking'
         self.vehicle_mass = self.declare_parameter('vehicle_mass', 6.0).value  # kg
+
+        # Trajectory offset parameters (same idea as pp_param_tuner)
+        traj_offset_x_desc = ParameterDescriptor(
+            description='Trajectory X offset (m) - can be adjusted live',
+            floating_point_range=[FloatingPointRange(from_value=-10.0, to_value=10.0, step=0.05)]
+        )
+        traj_offset_y_desc = ParameterDescriptor(
+            description='Trajectory Y offset (m) - can be adjusted live',
+            floating_point_range=[FloatingPointRange(from_value=-10.0, to_value=10.0, step=0.05)]
+        )
+        traj_offset_yaw_desc = ParameterDescriptor(
+            description='Trajectory YAW offset (rad) - can be adjusted live',
+            floating_point_range=[FloatingPointRange(from_value=-3.14, to_value=3.14, step=0.01)]
+        )
+        self.traj_offset_x = self.declare_parameter('traj_offset_x', 0.0, traj_offset_x_desc).value
+        self.traj_offset_y = self.declare_parameter('traj_offset_y', 0.0, traj_offset_y_desc).value
+        self.traj_offset_yaw = self.declare_parameter('traj_offset_yaw', 0.0, traj_offset_yaw_desc).value
+
+        # Segment switching hysteresis and resume-current behavior
+        self.curve_exit_confirm_cycles = int(
+            self.declare_parameter('curve_exit_confirm_cycles', 10).value
+        )  # e.g. 10 cycles @50Hz ~= 0.2s
+        self.resume_current_drop_A = float(
+            self.declare_parameter('resume_current_drop_A', 5.0).value
+        )
         
         # QoS profile for best-effort communication
         qos_profile = QoSProfile(
@@ -519,7 +546,7 @@ class CurrentAccelCalibNode(Node):
         # Subscriptions
         self.odom_subscription = self.create_subscription(
             Odometry,
-            '/odom',  # EKF-filtered odometry
+            '/odometry/filtered',  # EKF-filtered odometry
             self.odom_callback,
             qos_profile
         )
@@ -568,6 +595,9 @@ class CurrentAccelCalibNode(Node):
         self.last_straight_end_current = 0.0  # End current of previous straight
         self.current_calibration_current = 0.0  # Current commanded value
         self.calibration_complete = False  # Flag when reached max current
+
+        # Hysteresis counter: require N consecutive straight decisions to exit curve
+        self._straight_confirm_counter = 0
         
         # Trajectory and controller
         self.trajectory = Figure8Trajectory(
@@ -590,6 +620,12 @@ class CurrentAccelCalibNode(Node):
         # Calibration state
         self.start_time = None
         self.trajectory_idx = 0
+
+        # Trajectory transform state
+        self.trajectory_offset = np.array([self.traj_offset_x, self.traj_offset_y], dtype=float)
+        self.trajectory_rotation = float(self.traj_offset_yaw)
+
+        self.add_on_set_parameters_callback(self._on_parameter_change)
         
         # Timer for command publishing
         self.timer = self.create_timer(
@@ -606,6 +642,54 @@ class CurrentAccelCalibNode(Node):
             f"  Command Frequency: {self.command_frequency} Hz\n"
             f"  Calibration Mode: {self.calibration_mode}\n"
             f"  Vehicle Mass: {self.vehicle_mass} kg"
+        )
+
+    def _on_parameter_change(self, params: list[Parameter]) -> SetParametersResult:
+        for param in params:
+            name = param.name
+            value = param.value
+            if name == 'traj_offset_x':
+                self.traj_offset_x = float(value)
+                self.trajectory_offset[0] = self.traj_offset_x
+            elif name == 'traj_offset_y':
+                self.traj_offset_y = float(value)
+                self.trajectory_offset[1] = self.traj_offset_y
+            elif name == 'traj_offset_yaw':
+                self.traj_offset_yaw = float(value)
+                self.trajectory_rotation = self.traj_offset_yaw
+            elif name == 'curve_exit_confirm_cycles':
+                self.curve_exit_confirm_cycles = int(max(1, value))
+                self._straight_confirm_counter = 0
+            elif name == 'resume_current_drop_A':
+                self.resume_current_drop_A = float(max(0.0, value))
+
+        return SetParametersResult(successful=True)
+
+    def _transform_trajectory_point(self, point_local: np.ndarray) -> np.ndarray:
+        """Transform trajectory point from local frame to odom frame."""
+        cos_yaw = math.cos(self.trajectory_rotation)
+        sin_yaw = math.sin(self.trajectory_rotation)
+        rotated = np.array(
+            [
+                cos_yaw * point_local[0] - sin_yaw * point_local[1],
+                sin_yaw * point_local[0] + cos_yaw * point_local[1],
+            ],
+            dtype=float,
+        )
+        return rotated + self.trajectory_offset
+
+    def _to_trajectory_local(self, point_odom: np.ndarray) -> np.ndarray:
+        """Transform odom point to trajectory local frame."""
+        dx = float(point_odom[0] - self.trajectory_offset[0])
+        dy = float(point_odom[1] - self.trajectory_offset[1])
+        cos_yaw = math.cos(-self.trajectory_rotation)
+        sin_yaw = math.sin(-self.trajectory_rotation)
+        return np.array(
+            [
+                cos_yaw * dx - sin_yaw * dy,
+                sin_yaw * dx + cos_yaw * dy,
+            ],
+            dtype=float,
         )
     
     def odom_callback(self, msg: Odometry):
@@ -641,7 +725,7 @@ class CurrentAccelCalibNode(Node):
         )
         return yaw
     
-    def get_current_stage(self, current_time: float) -> tuple:
+    def get_current_stage(self, current_time: float, desired_in_curve: bool) -> tuple:
         """
         Get current calibration stage with segment-aware current ramping.
         Supports both acceleration (current ramp) and braking (fixed stages) modes.
@@ -680,8 +764,8 @@ class CurrentAccelCalibNode(Node):
             if self.calibration_complete:
                 return "ACCELERATION_COMPLETE", 0.0, True, 0.0, 0.0
             
-            # Determine if currently in curve or straight
-            is_in_curve = self.trajectory.is_in_curve(self.trajectory_idx)
+            # Determine if controller should behave as "in curve" (use speed control)
+            is_in_curve = bool(desired_in_curve)
             
             # Initialize on first call
             if self.current_segment_type is None:
@@ -692,17 +776,28 @@ class CurrentAccelCalibNode(Node):
             
             # Detect segment transitions
             if is_in_curve and self.current_segment_type == 'straight':
-                # Transition: straight → curve
+                # Transition: straight → curve (record current at the moment we decide to enter curve)
                 self.last_straight_end_current = self.current_calibration_current
                 self.current_segment_type = 'curve'
                 self.segment_start_time = current_time
-                
-            elif not is_in_curve and self.current_segment_type == 'curve':
-                # Transition: curve → straight
-                self.current_segment_type = 'straight'
-                self.segment_start_time = current_time
-                # Start new straight at 80% of previous straight's end current
-                self.segment_start_current = self.last_straight_end_current * 0.8
+                self._straight_confirm_counter = 0
+
+            elif (not is_in_curve) and self.current_segment_type == 'curve':
+                # Transition: curve → straight (require hysteresis to avoid chatter)
+                self._straight_confirm_counter += 1
+                if self._straight_confirm_counter >= max(1, self.curve_exit_confirm_cycles):
+                    self.current_segment_type = 'straight'
+                    self.segment_start_time = current_time
+                    self._straight_confirm_counter = 0
+                    # Resume current from last recorded value minus a drop, then ramp up
+                    self.segment_start_current = max(
+                        0.0,
+                        float(self.last_straight_end_current) - float(self.resume_current_drop_A),
+                    )
+            else:
+                # Reset counter whenever we are not trying to exit curve
+                if self.current_segment_type != 'curve' or is_in_curve:
+                    self._straight_confirm_counter = 0
             
             # Compute current value and control mode
             if self.current_segment_type == 'straight':
@@ -765,9 +860,6 @@ class CurrentAccelCalibNode(Node):
         current_time = time.time()
         elapsed_time = current_time - self.start_time
         
-        # Get current stage with segment-aware current ramping
-        stage_name, current_A, is_complete, jerk_mode, target_speed = self.get_current_stage(current_time)
-        
         # Create command message
         cmd_msg = AckermannDriveStamped()
         cmd_msg.header.stamp = self.get_clock().now().to_msg()
@@ -781,19 +873,44 @@ class CurrentAccelCalibNode(Node):
             cmd_msg.drive.jerk = 0.0
             self.get_logger().info("Calibration complete! Data recorded in rosbag.")
         else:
-            # Find closest point on trajectory
-            closest_point, self.trajectory_idx, cross_track_error = \
-                self.trajectory.get_closest_point(self.current_pos, self.trajectory_idx)
+            # Transform current position into trajectory local frame
+            local_pos = self._to_trajectory_local(self.current_pos)
+
+            # Find closest point on trajectory (local frame)
+            closest_point_local, self.trajectory_idx, cross_track_error = \
+                self.trajectory.get_closest_point(local_pos, self.trajectory_idx)
             
             # Compute adaptive lookahead distance based on velocity
             lookahead_distance = self.controller.compute_lookahead(self.current_velocity)
-            lookahead_point, lookahead_idx = self.trajectory.get_lookahead_point(
+            lookahead_point_local, lookahead_idx = self.trajectory.get_lookahead_point(
                 self.trajectory_idx, lookahead_distance
             )
             
             # Get trajectory heading and curvature at lookahead point
-            lookahead_heading = self.trajectory.get_heading(lookahead_idx)
+            lookahead_heading_local = self.trajectory.get_heading(lookahead_idx)
             path_curvature = self.trajectory.get_curvature(lookahead_idx)
+
+            # Determine longitudinal control mode using lookahead index (forward point)
+            desired_in_curve = self.trajectory.is_in_curve(lookahead_idx)
+
+            # Get current stage with segment-aware current ramping
+            stage_name, current_A, is_complete, jerk_mode, target_speed = self.get_current_stage(
+                current_time,
+                desired_in_curve=desired_in_curve,
+            )
+
+            if is_complete:
+                cmd_msg.drive.steering_angle = 0.0
+                cmd_msg.drive.acceleration = 0.0
+                cmd_msg.drive.speed = 0.0
+                cmd_msg.drive.jerk = 0.0
+                self.get_logger().info("Calibration complete! Data recorded in rosbag.")
+                self.cmd_publisher.publish(cmd_msg)
+                return
+
+            # Transform lookahead point and heading into odom frame for PP computation
+            lookahead_point = self._transform_trajectory_point(lookahead_point_local)
+            lookahead_heading = lookahead_heading_local + self.trajectory_rotation
             
             # Compute steering angle using Enhanced Pure Pursuit
             steering_angle, debug_info = self.controller.compute_steering(

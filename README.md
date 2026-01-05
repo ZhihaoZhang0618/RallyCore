@@ -58,16 +58,25 @@ ros2 launch f1tenth_system nav.launch.py
 ### 🏗️ Hardware Bringup Versions
 | Version | Launch File | LIO Backend | Features |
 |---------|-------------|-------------|----------|
-| **🚀 V3 (Latest)** | `base_orin_livox_bringup_v3.launch.py` | **Point-LIO** | 🎯 Point-LIO odometry • 🚫 No EKF fusion • 📦 Standard PointCloud2 |
+| **🚀 V3 (Latest)** | `base_orin_livox_bringup_v3.launch.py` | **Point-LIO** | 🎯 Point-LIO odometry • 🚫 No EKF fusion • ⚠️ **Accuracy not stable** |
 | **✨ V2** | `base_orin_livox_bringup_v2.launch.py` | **FAST-LIO2** | 🎯 Integrated control (joystick_v2) • 🔋 Speed/current/duty modes • 🤖 EKF fusion |
 | 📦 V1 (Legacy) | `base_orin_livox_bringup.launch.py` | **FAST-LIO2** | 🔀 Separate mux node • 🏛️ Traditional architecture • 🤖 EKF fusion |
 
-**🎉 V3 Advantages:** Point-LIO robustness • Simplified sensor fusion • Better degeneracy handling
-**⚙️ V2 Advantages:** Single control node • Built-in arbitration • Current control support • Easier debugging
+**⚠️ V3 Status:** Point-LIO integrates well with mid360 structurally, but odometry drift/accuracy performance is currently **below expectations**. Recommend **V2 (FAST-LIO2)** for reliable localization and calibration work.
+**⚙️ V2 Advantages:** Single control node • Built-in arbitration • Current control support • Easier debugging • Proven odometry accuracy
 
-📚 **Architecture details:** See `src/f1tenth_system/scripts/readme/` for V1 vs V2 comparison
+📚 **Calibration docs (maintained):** [src/f1tenth_system/scripts/README_EN.md](src/f1tenth_system/scripts/README_EN.md)
 
 ## 🔧 Calibration & Tuning
+
+✅ The longitudinal calibration workflow is documented and maintained in:
+
+- [src/f1tenth_system/scripts/README_EN.md](src/f1tenth_system/scripts/README_EN.md)
+
+It includes:
+- `/calib/ackermann_cmd` jerk convention (speed/current)
+- Localization-based (Pure Pursuit) and RC-intervention (Manual Steer) data collection
+- Recommended **two-stage workflow** (Stage A speed-hold current + Stage B interval accel sweep)
 
 ### 🎯 Pure Pursuit Parameter Tuning
 **Purpose:** Optimize trajectory tracking before running calibration tests.
@@ -78,7 +87,7 @@ ros2 launch f1tenth_system base_orin_livox_bringup_v2.launch.py
 ros2 launch f1tenth_system slam.launch.py
 
 # Run PP tuner (default 1 m/s)
-ros2 run f1tenth_system pp_param_tuner
+ros2 run f1tenth_system pp_param_tuner.py
 
 # Real-time speed adjustment
 ros2 param set /pp_param_tuner target_speed 2.5
@@ -101,78 +110,59 @@ ros2 run rqt_reconfigure rqt_reconfigure
 
 ---
 
-### ⚡ Current-Acceleration Calibration
-**Purpose:** Build motor current to acceleration mapping for precise speed control.
+### ⚡ Longitudinal Calibration (Recommended)
 
-**📋 3-Tier Calibration System:**
-| Tier | Duration | Target Speed | Current Range | Purpose |
-|------|----------|--------------|---------------|------|
-| 🐌 LOW_SPEED | 0-40s | 1.5 m/s | 0→150 A | Coulomb friction characteristics |
-| 📈 MID_SPEED | 40-80s | 3.0 m/s | 0→150 A | Linear drag characteristics |
-| ⚡ HIGH_SPEED | 80-120s | 5.0 m/s | 0→150 A | High-speed EMF characteristics |
+#### Option A: Localization-based (Pure Pursuit)
 
-**🚀 Quick Start:**
+This option requires stable odometry and a relatively large open area/track (long straights and safe turn radius), because the vehicle needs enough space to run repeatable loops.
+
+See [src/f1tenth_system/scripts/README_EN.md](src/f1tenth_system/scripts/README_EN.md) → Localization-based (Pure Pursuit).
+
 ```bash
-# 1️⃣ Start hardware and SLAM
-ros2 launch f1tenth_system base_orin_livox_mapping_v2.launch.py
-
-# 2️⃣ Optional: Record rosbag for later analysis
-ros2 bag record -a -o calibration_run
-
-# 3️⃣ Run calibration (auto completes in 120 seconds)
-ros2 launch f1tenth_system calib_launch.py
-
-# 4️⃣ Check output
-ls calibration_data.csv
+ros2 run f1tenth_system pp_current_acc_calib.py
 ```
 
-**⚙️ Configuration Parameters:**
+#### Option B (Recommended): RC-intervention (No localization) — Two-stage workflow
+
+This is the recommended workflow when odometry/localization is unstable, or when you do not have a large enough calibration track.
+
+Stage A (speed hold → mean current):
+
 ```bash
-# Custom trajectory radius (default 1.6m)
-ros2 launch f1tenth_system calib_launch.py figure8_radius:=1.8
-
-# Custom vehicle mass (default 6.0kg)
-ros2 launch f1tenth_system calib_launch.py vehicle_mass:=6.5
-
-# Braking calibration mode (negative currents)
-ros2 launch f1tenth_system calib_launch.py calibration_mode:=braking
-
-# Combined parameters
-ros2 launch f1tenth_system calib_launch.py \
-  calibration_mode:=acceleration \
-  figure8_radius:=1.8 \
-  vehicle_mass:=6.5 \
-  command_frequency:=50
+ros2 run f1tenth_system speed_hold_current_logger.py --ros-args \
+    -p speeds:="[1,2,3,4,5,6,7,8]" \
+    -p hold_time_sec:=10.0 \
+    -p vesc_topic:=/sensors/core \
+    -p output_path:=speed_hold_current_results.txt
 ```
 
-**📊 Data Analysis:**
-After calibration, analyze the collected data:
-```python
-import pandas as pd
-import numpy as np
-from scipy.optimize import curve_fit
+Stage B (per speed interval → accel vs current, speed from `/odom`):
 
-# Load data
-df = pd.read_csv('calibration_data.csv')
-
-# Fit linear model: a = k*I + b
-def linear(I, k, b):
-    return k * I + b
-
-params, _ = curve_fit(linear, df['current_A'], df['estimated_acceleration'])
-print(f"Acceleration model: a = {params[0]:.4f}*I + {params[1]:.4f}")
-
-# Calculate fit quality
-from sklearn.metrics import r2_score
-r2 = r2_score(df['estimated_acceleration'], linear(df['current_A'], *params))
-print(f"R² score: {r2:.4f}")
+```bash
+ros2 run f1tenth_system speed_interval_accel_sweep.py --ros-args \
+    -p v_start:=1.0 -p v_end:=8.0 -p dv:=1.0 \
+    -p base_current_file:=speed_hold_current_results.txt \
+    -p current_step:=3.0 -p current_max:=80.0 \
+    -p vesc_topic:=/sensors/core \
+    -p odom_topic:=/odom \
+    -p output_path:=speed_interval_accel_results.txt
 ```
 
-**🔍 Troubleshooting:**
-- **No odometry:** Check if EKF is running with `ros2 topic echo /odom`
-- **Vehicle not moving:** Verify VESC connection with `ros2 topic echo /vesc/sensors`
-- **CSV empty:** Ensure full 120s runtime, check disk space with `df -h`
-- **Trajectory drift:** Reduce `figure8_radius` or run PP tuner first
+If you need RC steering intervention during data collection, enable it and the scripts will:
+- NOT sample / NOT run trials during turning (out of deadzone)
+- Wait `post_turn_settle_sec` after returning straight before resuming
+
+```bash
+ros2 run f1tenth_system speed_hold_current_logger.py --ros-args \
+    -p use_rc_steering:=true -p rc_topic:=/rc/channels -p rc_timeout_sec:=0.25 \
+    -p post_turn_settle_sec:=0.8
+
+ros2 run f1tenth_system speed_interval_accel_sweep.py --ros-args \
+    -p use_rc_steering:=true -p rc_topic:=/rc/channels -p rc_timeout_sec:=0.25 \
+    -p post_turn_settle_sec:=0.8
+```
+
+📊 Analysis prompt templates live in: [src/f1tenth_system/scripts/README_EN.md](src/f1tenth_system/scripts/README_EN.md).
 
 ## 🏗️ Architecture: V1 vs V2
 
