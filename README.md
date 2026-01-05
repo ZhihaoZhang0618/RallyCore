@@ -78,37 +78,6 @@ It includes:
 - Localization-based (Pure Pursuit) and RC-intervention (Manual Steer) data collection
 - Recommended **two-stage workflow** (Stage A speed-hold current + Stage B interval accel sweep)
 
-### 🎯 Pure Pursuit Parameter Tuning
-**Purpose:** Optimize trajectory tracking before running calibration tests.
-
-```bash
-# Start hardware and localization first
-ros2 launch f1tenth_system base_orin_livox_bringup_v2.launch.py
-ros2 launch f1tenth_system slam.launch.py
-
-# Run PP tuner (default 1 m/s)
-ros2 run f1tenth_system pp_param_tuner.py
-
-# Real-time speed adjustment
-ros2 param set /pp_param_tuner target_speed 2.5
-
-# GUI tuning interface
-ros2 run rqt_reconfigure rqt_reconfigure
-```
-
-**✨ Key Features:**
-- 🎮 Manual speed control (0-10 m/s)
-- 🔄 Automatic Figure-8 trajectory generation
-- 📊 Live metrics: CTE RMS, heading RMS
-- ⚙️ Dynamic parameter tuning: `wheelbase`, `lookahead_gain`, `min_lookahead`, `max_lookahead`
-
-**🎯 Tuning Tips:**
-- Start with low speed (1-2 m/s) to verify trajectory tracking
-- Increase `lookahead_gain` if path is too aggressive
-- Decrease `lookahead_gain` if path tracking is too loose
-- Check RViz visualization: `/pp/current_trajectory` and `/pp/lookahead_point`
-
----
 
 ### ⚡ Longitudinal Calibration (Recommended)
 
